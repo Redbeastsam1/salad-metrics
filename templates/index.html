@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salad Metrics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container-fluid py-4 px-md-5" id="main-container">
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="mb-0 fw-bold">🥗 Salad Metrics</h1>
+            <div class="d-flex gap-3 align-items-center">
+                <div class="btn-group" role="group" id="time-range-group">
+                    <button type="button" class="btn btn-outline-primary" data-hours="1">1H</button>
+                    <button type="button" class="btn btn-outline-primary" data-hours="6">6H</button>
+                    <button type="button" class="btn btn-outline-primary" data-hours="12">12H</button>
+                    <button type="button" class="btn btn-outline-primary active" data-hours="24">24H</button>
+                </div>
+                <button class="btn btn-primary fw-bold" type="button" data-bs-toggle="offcanvas" data-bs-target="#containerHistorySidebar">
+                    🕒 Container History
+                </button>
+            </div>
+        </div>
+
+        <div id="layout-container">
+            <main id="main-section">
+                
+                <div class="row g-4 mb-4">
+                    <div class="col-md-4">
+                        <div class="stat-card h-100 text-center">
+                            <h6 class="text-muted text-uppercase mb-2" style="font-size:0.8rem; letter-spacing:1px;">Session Uptime</h6>
+                            <h3 class="fw-bold mb-0 text-primary" id="session-uptime">0h 0m</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card h-100 text-center">
+                            <h6 class="text-muted text-uppercase mb-2" style="font-size:0.8rem; letter-spacing:1px;">Session Earnings</h6>
+                            <h3 class="fw-bold mb-0 text-success" id="session-earnings">+$0.00</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card h-100 text-center">
+                            <h6 class="text-muted text-uppercase mb-2" style="font-size:0.8rem; letter-spacing:1px;">Current Wallet Balance</h6>
+                            <h3 class="fw-bold mb-0 text-success" id="wallet-balance-text">$0.00</h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row g-4 mb-4">
+                    <div class="col-12">
+                        <div class="stat-card">
+                            <h5 class="mb-3">System Information</h5>
+                            <div class="row g-3">
+                                <div class="col-md-3 col-sm-6"><div class="sys-info-box"><div class="sys-info-label">CPU</div><div class="fw-bold text-truncate" id="sys-cpu">Loading...</div></div></div>
+                                <div class="col-md-3 col-sm-6"><div class="sys-info-box"><div class="sys-info-label">GPU</div><div class="fw-bold text-truncate" id="sys-gpu">Loading...</div></div></div>
+                                <div class="col-md-3 col-sm-6"><div class="sys-info-box"><div class="sys-info-label">RAM</div><div class="fw-bold" id="sys-ram">Loading...</div></div></div>
+                                <div class="col-md-3 col-sm-6"><div class="sys-info-box"><div class="sys-info-label">OS</div><div class="fw-bold text-truncate" id="sys-os">Loading...</div></div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-4 mb-4">
+                    <div class="col-xl-6"><div class="stat-card"><div class="chart-container"><canvas id="walletChart"></canvas></div></div></div>
+                    <div class="col-xl-6"><div class="stat-card"><div class="chart-container"><canvas id="containerChart"></canvas></div></div></div>
+                </div>
+                <div class="row g-4">
+                    <div class="col-12"><div class="stat-card"><div class="chart-container"><canvas id="bandwidthChart"></canvas></div></div></div>
+                </div>
+            </main>
+
+            <aside id="error-section" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0 text-danger fw-bold">⚠ Degraded Errors</h5>
+                </div>
+                <div id="errors-container" class="d-flex flex-column gap-2"></div>
+            </aside>
+        </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="containerHistorySidebar">
+        <div class="offcanvas-header border-bottom border-secondary border-opacity-25">
+            <h5 class="offcanvas-title fw-bold">Container History</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body" id="history-container">
+            <p class="text-muted text-center mt-4">Loading history...</p>
+        </div>
+    </div>
+
+    <div class="toast-container position-fixed bottom-0 end-0 p-4" style="z-index: 1080;" id="toast-container"></div>
+
+    <button class="theme-toggle" id="theme-toggle" title="Toggle Theme">
+        <svg id="theme-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
