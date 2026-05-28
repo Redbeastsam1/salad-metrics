@@ -141,7 +141,7 @@ def api_system_info():
     sys_dir = r"C:\ProgramData\Salad\logs\systeminformation"
     sys_info = {"CPU": "Unknown", "GPU": "Unknown", "RAM": "Unknown", "OS": "Unknown"}
     try:
-        files = [os.path.join(sys_dir, f) for f in os.listdir(sys_dir) if f.endswith(".txt")]
+        files = [os.path.join(sys_dir, f) for f in os.listdir(sys_dir) if f.endswith(".txt") or f.endswith(".log")]
         if files:
             files.sort(key=os.path.getmtime, reverse=True)
             with open(files[0], "r", encoding="utf-8", errors='ignore') as f:
