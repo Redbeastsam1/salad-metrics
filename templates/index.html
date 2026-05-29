@@ -19,12 +19,18 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="mb-0 fw-bold">🥗 Salad Metrics</h1>
             <div class="d-flex gap-3 align-items-center">
-                <div class="btn-group" role="group" id="time-range-group">
-                    <button type="button" class="btn btn-outline-primary" data-hours="1">1H</button>
-                    <button type="button" class="btn btn-outline-primary" data-hours="6">6H</button>
-                    <button type="button" class="btn btn-outline-primary" data-hours="12">12H</button>
-                    <button type="button" class="btn btn-outline-primary active" data-hours="24">24H</button>
-                </div>
+                <div class="dropdown">
+            <button class="btn btn-outline-primary dropdown-toggle fw-bold" type="button" id="timeRangeDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                24 Hours
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm" aria-labelledby="timeRangeDropdown">
+                <li><a class="dropdown-item active" href="#" data-hours="24">24 Hours</a></li>
+                <li><a class="dropdown-item" href="#" data-hours="168">1 Week</a></li>
+                <li><a class="dropdown-item" href="#" data-hours="720">1 Month</a></li>
+                <li><a class="dropdown-item" href="#" data-hours="4320">6 Months</a></li>
+                <li><a class="dropdown-item" href="#" data-hours="8760">1 Year</a></li>
+            </ul>
+        </div>
                 <button class="btn btn-primary fw-bold" type="button" data-bs-toggle="offcanvas" data-bs-target="#containerHistorySidebar">
                     🕒 Container History
                 </button>

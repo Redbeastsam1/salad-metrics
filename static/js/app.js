@@ -14,7 +14,6 @@ socket.on('data_updated', () => {
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme();
     initTimeSelectors();
-    
     fetchDashboardData();
     fetchSystemInfo();
     fetchStats();
@@ -26,11 +25,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initTimeSelectors() {
-    const buttons = document.querySelectorAll('#time-range-group button');
-    buttons.forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            buttons.forEach(b => b.classList.remove('active'));
+    const dropdownItems = document.querySelectorAll('.dropdown-item');
+    const dropdownButton = document.getElementById('timeRangeDropdown');
+
+    dropdownItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevents the page from jumping to the top
+
+            
+            dropdownItems.forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
+
+            
+            dropdownButton.innerText = e.target.innerText;
+
+            // Grab the hours data attribute and fetch the new graph data!
             currentHours = parseInt(e.target.getAttribute('data-hours'));
             fetchDashboardData();
         });
