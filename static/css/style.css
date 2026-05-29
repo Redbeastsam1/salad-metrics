@@ -58,6 +58,13 @@ h1, h2, h3, h4, h5 { font-weight: 600; }
     margin-bottom: 4px;
 }
 
+.balance-text {
+    font-size: 3rem;
+    font-weight: 700;
+    color: #28a745;
+    letter-spacing: -1px;
+}
+
 .chart-container { height: 350px; position: relative; }
 canvas { 
     background-color: var(--chart-bg) !important; 
@@ -65,8 +72,8 @@ canvas {
     transition: background-color 0.3s ease;
 }
 
-#layout-container { display: flex; gap: 24px; transition: all 0.3s ease; }
-main { transition: width 0.3s ease; width: 100%; }
+#layout-container { display: flex; gap: 24px; align-items: flex-start; transition: all 0.3s ease; }
+main { flex: 1; min-width: 0; transition: width 0.3s ease; }
 
 aside {
     width: 350px;
@@ -104,8 +111,6 @@ aside {
     border: 1px solid var(--card-border);
     box-shadow: 0 8px 30px rgba(0,0,0,0.2);
 }
-
-.offcanvas { background-color: var(--card-bg); color: var(--text-color); border-left: 1px solid var(--card-border); }
 
 @media (max-width: 991.98px) {
     #layout-container { flex-direction: column; }

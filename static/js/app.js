@@ -1,15 +1,9 @@
 let isDarkMode = JSON.parse(localStorage.getItem('isDarkMode'));
 if (isDarkMode === null) isDarkMode = true;
-let currentHours = 24; // Default time range
+let currentHours = 24;
 
-// --- Socket.IO Real-Time Connection ---
+// --- Socket.IO Integration ---
 const socket = io();
-
-socket.on('connect', () => {
-    console.log('Connected to real-time feed!');
-});
-
-// When backend detects new log entries, it tells us to pull the fresh data
 socket.on('data_updated', () => {
     fetchDashboardData();
     fetchStats();
@@ -21,26 +15,22 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme();
     initTimeSelectors();
     
-    // Initial Data Pull
     fetchDashboardData();
     fetchSystemInfo();
     fetchStats();
     fetchErrors();
     
-    // Keep stats ticking locally every minute
     setInterval(fetchStats, 60000); 
+    setInterval(updateLiveHardware, 3000); // Live HW updates every 3s
+    updateLiveHardware();
 });
 
-// --- Time Range Selectors ---
 function initTimeSelectors() {
     const buttons = document.querySelectorAll('#time-range-group button');
     buttons.forEach(btn => {
         btn.addEventListener('click', (e) => {
-            // Update active state
             buttons.forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
-            
-            // Fetch new data range
             currentHours = parseInt(e.target.getAttribute('data-hours'));
             fetchDashboardData();
         });
@@ -83,10 +73,10 @@ const baseChartOptions = {
 };
 
 const walletChart = new Chart(document.getElementById('walletChart'), {
-    type: 'line', data: { datasets: [] }, options: { ...baseChartOptions, plugins: { ...baseChartOptions.plugins, title: { display: true, text: 'Wallet Balance' } } }
+    type: 'line', data: { datasets: [] }, options: { ...baseChartOptions, plugins: { ...baseChartOptions.plugins, title: { display: true, text: 'Wallet Balance ($)' } } }
 });
 const containerChart = new Chart(document.getElementById('containerChart'), {
-    type: 'line', data: { datasets: [] }, options: { ...baseChartOptions, plugins: { ...baseChartOptions.plugins, title: { display: true, text: 'Container Earnings' } } }
+    type: 'line', data: { datasets: [] }, options: { ...baseChartOptions, plugins: { ...baseChartOptions.plugins, title: { display: true, text: 'Container Earnings ($/24h)' } } }
 });
 const bandwidthChart = new Chart(document.getElementById('bandwidthChart'), {
     type: 'line', data: { datasets: [] }, options: { ...baseChartOptions, plugins: { ...baseChartOptions.plugins, title: { display: true, text: 'Bandwidth (MB/s)' } } }
@@ -118,13 +108,26 @@ async function fetchSystemInfo() {
         const sysRes = await fetch('/api/system-info');
         const sysInfo = await sysRes.json();
         document.getElementById('sys-cpu').innerText = sysInfo.CPU;
-        document.getElementById('sys-cpu').title = sysInfo.CPU;
         document.getElementById('sys-gpu').innerText = sysInfo.GPU;
-        document.getElementById('sys-gpu').title = sysInfo.GPU;
         document.getElementById('sys-ram').innerText = sysInfo.RAM;
         document.getElementById('sys-os').innerText = sysInfo.OS;
-        document.getElementById('sys-os').title = sysInfo.OS;
     } catch(e) {}
+}
+
+async function updateLiveHardware() {
+    try {
+        const res = await fetch('/api/hardware-live');
+        const data = await res.json();
+        
+        document.getElementById('live-cpu-val').innerText = `${data.cpu_load.toFixed(1)}%`;
+        document.getElementById('live-cpu-bar').style.width = `${data.cpu_load}%`;
+        
+        document.getElementById('live-ram-val').innerText = `${data.ram_load.toFixed(1)}%`;
+        document.getElementById('live-ram-bar').style.width = `${data.ram_load}%`;
+        
+        document.getElementById('live-gpu-val').innerText = `${data.gpu_load.toFixed(1)}% (${data.gpu_temp}°C)`;
+        document.getElementById('live-gpu-bar').style.width = `${data.gpu_load}%`;
+    } catch (err) {}
 }
 
 async function fetchStats() {
@@ -227,6 +230,7 @@ function renderContainerHistory(runs) {
 
 // --- Notifications & Errors ---
 let notifiedErrors = new Set();
+let isFirstErrorLoad = true; // Tracks if this is the initial page load
 
 function showNotification(title, message, isError = false) {
     const container = document.getElementById('toast-container');
@@ -261,7 +265,10 @@ async function fetchErrors() {
             errorSection.style.display = 'block';
             errors.forEach(error => {
                 if (!notifiedErrors.has(error.timestamp)) {
-                    showNotification('Workload Failure', error.message, true);
+                    // NEW: Only show the popup toast if it is NOT the first page load
+                    if (!isFirstErrorLoad) {
+                        showNotification('Workload Failure', error.message, true);
+                    }
                     notifiedErrors.add(error.timestamp);
                 }
 
@@ -293,5 +300,11 @@ async function fetchErrors() {
         } else {
             errorSection.style.display = 'none';
         }
-    } catch (err) {}
+        
+        // Mark the first load as complete so future errors trigger toasts
+        isFirstErrorLoad = false; 
+
+    } catch (err) {
+        console.error("Failed to fetch errors:", err);
+    }
 }

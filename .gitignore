@@ -1,1 +1,12 @@
+# Virtual Environments
+venv/
+
+# Secrets
+.env
+
+# Local Databases
 salad_metrics.db
+
+# Python Caches
+__pycache__/
+*.py[cod]

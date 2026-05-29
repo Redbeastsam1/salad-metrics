@@ -1,34 +1,45 @@
-from flask import Flask, jsonify, render_template, request
-from flask_socketio import SocketIO
+import argparse
+from flask import Flask, render_template, jsonify, request
 from flask_cors import CORS
-import os, re, json, time, argparse, bleach
+from flask_socketio import SocketIO
+import os
+import re
+import time
+import json
+import bleach
+import psutil
+import GPUtil
 from datetime import datetime
 import database as db
 
+# Setup CLI Arguments
 parser = argparse.ArgumentParser(description='Set webserver port and machine name')
 parser.add_argument('-port', type=int, nargs='?', default=8000)
 parser.add_argument('-machine_name', type=str, required=True)
 args = parser.parse_args()
 
-app = Flask(__name__)
+# Initialize Flask App & WebSockets
+app = Flask(__name__, template_folder='templates', static_folder='static')
 app.config['SECRET_KEY'] = 'salad_secret!'
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Init Database
+# Initialize Local Database
 db.init_db()
 
-# Session tracking for "At a Glance" stats
+MACHINE_NAME = args.machine_name
+
+# Session Tracking Variables
 SESSION_START_TIME = time.time()
 INITIAL_WALLET_BALANCE = None
-
 log_cache = {'files': {}}
 bandwidth_cache = {'files': {}}
 
+# Log Parsing Regex Patterns
 EARNINGS_REGEX = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Predicted Earnings Report: ([\d.]+) from \(([^)]+)\)")
 WALLET_REGEX = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Wallet: Current\(([\d.]+)\), Predicted\(([-\d.]+)\)")
 BANDWIDTH_REGEX = re.compile(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] \{.*?"BidirThroughput":([\d.]+)')
-ERROR_REGEX = re.compile(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[WRN\] Node Compatibility Workload Failure (.*?) NodeCompatibilityMessage {(.*?)}', re.DOTALL)
+ERROR_REGEX = re.compile(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[(WRN|ERR)\] (.*)')
 SYS_INFO_REGEX = re.compile(r"\[INF\] StaticData: (\{.*\})")
 
 def parse_file(file_path, start_line=0, is_bandwidth=False):
@@ -43,7 +54,9 @@ def parse_file(file_path, start_line=0, is_bandwidth=False):
             for match in WALLET_REGEX.finditer(joined_content):
                 parsed['wallet'].append({'timestamp': match.group(1), 'currentBalance': float(match.group(2))})
             for match in ERROR_REGEX.finditer(joined_content):
-                parsed['errors'].append({'timestamp': match.group(1), 'error_message': match.group(3)})
+                msg = match.group(3).strip()
+                if "Node Compatibility" in msg or "Degraded" in msg or "Failed" in msg:
+                    parsed['errors'].append({'timestamp': match.group(1), 'error_message': msg})
             
             if is_bandwidth:
                 for match in BANDWIDTH_REGEX.finditer(joined_content):
@@ -54,14 +67,14 @@ def parse_file(file_path, start_line=0, is_bandwidth=False):
         return parsed, 0
 
 def background_log_monitor():
-    """Runs continuously in the background to check for log updates."""
+    """Runs continuously in the background. Checks logs and updates DB/WebSockets."""
     global INITIAL_WALLET_BALANCE
     log_dir = r'C:\ProgramData\Salad\logs'
     
     while True:
         has_new_data = False
         
-        # 1. Check Main Logs
+        # 1. Process Main Logs
         main_files = [os.path.join(r, f) for r, _, fs in os.walk(log_dir) for f in fs if f.endswith('.txt') and "Bandwidth-SGS-" not in r and "ndm" not in r]
         main_files.sort(key=os.path.getmtime, reverse=True)
         
@@ -74,16 +87,18 @@ def background_log_monitor():
                 if data['wallet'] or data['earnings'] or data['errors']:
                     db.insert_data('wallet', data['wallet'])
                     db.insert_data('earnings', data['earnings'])
-                    db.insert_data('errors', data['errors'])
+                    
+                    if data['errors']:
+                        db.insert_data('errors', data['errors'])
+                    
                     has_new_data = True
                     
-                    # Set initial balance for session tracking if not set
                     if not INITIAL_WALLET_BALANCE and data['wallet']:
                         INITIAL_WALLET_BALANCE = data['wallet'][0]['currentBalance']
                         
                 log_cache['files'][file_path] = {'last_line': start_line + lines_read, 'last_modified': os.path.getmtime(file_path)}
 
-        # 2. Check Bandwidth Logs
+        # 2. Process Bandwidth Logs
         bw_files = [os.path.join(r, f) for r, _, fs in os.walk(log_dir) for f in fs if f.endswith('.txt') and "Bandwidth-SGS-" in r]
         bw_files.sort(key=os.path.getmtime, reverse=True)
         
@@ -98,12 +113,13 @@ def background_log_monitor():
                     has_new_data = True
                 bandwidth_cache['files'][file_path] = {'last_line': start_line + lines_read, 'last_modified': os.path.getmtime(file_path)}
 
-        # If we found new data, tell the frontend to refresh instantly!
+        # Tell the frontend dashboard to refresh instantly
         if has_new_data:
             socketio.emit('data_updated', {'message': 'New data available'})
             
-        socketio.sleep(30) # Check every 30 seconds
+        socketio.sleep(15) 
 
+# --- API ROUTES ---
 @app.route('/')
 def serve_index():
     return render_template('index.html')
@@ -118,7 +134,6 @@ def api_stats():
     uptime_seconds = time.time() - SESSION_START_TIME
     uptime_str = f"{int(uptime_seconds // 3600)}h {int((uptime_seconds % 3600) // 60)}m"
     
-    # Calculate session earnings based on wallet difference
     session_earnings = 0.0
     latest_wallet = db.get_data(1)['wallet']
     if latest_wallet and INITIAL_WALLET_BALANCE:
@@ -149,15 +164,61 @@ def api_system_info():
                     match = SYS_INFO_REGEX.search(line)
                     if match:
                         data = json.loads(match.group(1))
-                        sys_info["CPU"] = f"{data.get('cpu', {}).get('manufacturer', '')} {data.get('cpu', {}).get('brand', '')}".strip()
-                        if data.get("graphics", {}).get("controllers"):
-                            sys_info["GPU"] = f"{data['graphics']['controllers'][0].get('vendor', '')} {data['graphics']['controllers'][0].get('model', '')}".strip()
+                        
+                        # CPU 
+                        cpu_brand = data.get('cpu', {}).get('brand', '').strip()
+                        cpu_brand = cpu_brand.replace("Gen Intel", "Intel")
+                        sys_info["CPU"] = cpu_brand
+                        
+                        # GPU 
+                        controllers = data.get("graphics", {}).get("controllers", [])
+                        if controllers:
+                            real_gpu = controllers[0]
+                            for gpu in controllers:
+                                name_string = f"{gpu.get('vendor', '')} {gpu.get('model', '')}".lower()
+                                if "nvidia" in name_string or "amd" in name_string or "radeon" in name_string:
+                                    real_gpu = gpu
+                                    break
+                                    
+                            gpu_vendor = real_gpu.get('vendor', '').strip()
+                            gpu_model = real_gpu.get('model', '').strip()
+                            
+                            if gpu_vendor.lower() in gpu_model.lower() or "nvidia" in gpu_model.lower() or "amd" in gpu_model.lower():
+                                sys_info["GPU"] = gpu_model
+                            else:
+                                sys_info["GPU"] = f"{gpu_vendor} {gpu_model}".strip()
+                        
+                        # RAM & OS
                         if "memLayout" in data:
                             sys_info["RAM"] = f"{sum(m.get('size', 0) for m in data['memLayout']) // (1024 ** 3)} GB"
                         sys_info["OS"] = data.get("os", {}).get("distro", "Unknown")
                         break
     except Exception: pass
     return jsonify(sys_info)
+
+@app.route('/api/hardware-live', methods=['GET'])
+def api_hardware_live():
+    # FIX: Adding a 0.1 second interval forces Python to calculate an accurate average
+    cpu_usage = psutil.cpu_percent(interval=0.1)
+    ram_usage = psutil.virtual_memory().percent
+    
+    gpu_usage = 0
+    gpu_temp = 0
+    try:
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            # This reads the raw compute load from the NVIDIA driver
+            gpu_usage = gpus[0].load * 100
+            gpu_temp = gpus[0].temperature
+    except Exception:
+        pass
+        
+    return jsonify({
+        "cpu_load": cpu_usage,
+        "ram_load": ram_usage,
+        "gpu_load": gpu_usage,
+        "gpu_temp": gpu_temp
+    })
 
 if __name__ == '__main__':
     socketio.start_background_task(background_log_monitor)
