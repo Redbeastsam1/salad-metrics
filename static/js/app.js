@@ -637,7 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchExchangeRates();
 
     // Periodic refresh fallback (even if WS is healthy)
-    setInterval(fetchStats, 60_000);
+    setInterval(fetchStats, 10_000);
     setInterval(updateLiveHardware, 2000);
     updateLiveHardware();
 });

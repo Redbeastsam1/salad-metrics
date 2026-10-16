@@ -281,15 +281,125 @@ func (db *DB) GetLatestWallet() *WalletRow {
 	return w
 }
 
-// GetFirstWalletAfter returns the first wallet reading at or after the given time (for session earnings).
-func (db *DB) GetFirstWalletAfter(t time.Time) *WalletRow {
-	ts := t.Format("2006-01-02 15:04:05")
-	row := db.pool.QueryRow(`SELECT timestamp, current FROM wallet WHERE timestamp >= ? ORDER BY timestamp ASC LIMIT 1`, ts)
-	w := &WalletRow{}
-	if err := row.Scan(&w.Timestamp, &w.Current); err != nil {
-		return nil
+// ParseTimestamp tries several standard formats used across Salad log files.
+func ParseTimestamp(ts string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02 15:04:05.999999999 -07:00",
+		"2006-01-02 15:04:05.999 -07:00",
+		"2006-01-02 15:04:05 -07:00",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
 	}
-	return w
+	for _, f := range formats {
+		if t, err := time.Parse(f, ts); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse timestamp: %q", ts)
+}
+
+// GetSessionStats calculates active workload session uptime and earnings dynamically from log history.
+func (db *DB) GetSessionStats() (string, float64) {
+	// 1. Get latest earnings row to see if node is running or idle
+	var latestTs, latestCont string
+	var latestRate float64
+	err := db.pool.QueryRow(`SELECT timestamp, container_id, rate FROM earnings ORDER BY timestamp DESC LIMIT 1`).
+		Scan(&latestTs, &latestCont, &latestRate)
+	if err != nil {
+		return "0h 0m", 0.0
+	}
+
+	// If latest rate is 0, node is idle
+	if latestRate <= 0 {
+		return "Idle", 0.0
+	}
+
+	// 2. Query earnings rows in reverse order to find where the current active session started
+	rows, err := db.pool.Query(`SELECT timestamp, rate FROM earnings ORDER BY timestamp DESC LIMIT 1000`)
+	if err != nil {
+		return "0h 0m", 0.0
+	}
+	defer rows.Close()
+
+	sessionStartTs := latestTs
+	var prevTime time.Time
+
+	for rows.Next() {
+		var ts string
+		var rate float64
+		if err := rows.Scan(&ts, &rate); err != nil {
+			break
+		}
+		if rate <= 0 {
+			break
+		}
+		t, err := ParseTimestamp(ts)
+		if err == nil {
+			// If gap between consecutive reports is > 45 minutes, it was an earlier session
+			if !prevTime.IsZero() && prevTime.Sub(t) > 45*time.Minute {
+				break
+			}
+			prevTime = t
+		}
+		sessionStartTs = ts
+	}
+
+	// 3. Find wallet balance at start of session (closest log around sessionStartTs)
+	var startWallet float64
+	var beforeTs string
+	var beforeVal float64
+	hasBefore := db.pool.QueryRow(`SELECT timestamp, current FROM wallet WHERE timestamp <= ? ORDER BY timestamp DESC LIMIT 1`, sessionStartTs).
+		Scan(&beforeTs, &beforeVal) == nil
+
+	var afterTs string
+	var afterVal float64
+	hasAfter := db.pool.QueryRow(`SELECT timestamp, current FROM wallet WHERE timestamp >= ? ORDER BY timestamp ASC LIMIT 1`, sessionStartTs).
+		Scan(&afterTs, &afterVal) == nil
+
+	startTime, err := ParseTimestamp(sessionStartTs)
+	if err == nil {
+		if hasBefore {
+			tB, errB := ParseTimestamp(beforeTs)
+			if errB == nil && startTime.Sub(tB) <= 20*time.Minute {
+				startWallet = beforeVal
+			} else if hasAfter {
+				startWallet = afterVal
+			} else {
+				startWallet = beforeVal
+			}
+		} else if hasAfter {
+			startWallet = afterVal
+		}
+	} else {
+		if hasBefore {
+			startWallet = beforeVal
+		} else if hasAfter {
+			startWallet = afterVal
+		}
+	}
+
+	// 4. Find latest wallet balance
+	var latestWallet float64
+	_ = db.pool.QueryRow(`SELECT current FROM wallet ORDER BY timestamp DESC LIMIT 1`).
+		Scan(&latestWallet)
+
+	sessionEarnings := latestWallet - startWallet
+	if sessionEarnings < 0 {
+		sessionEarnings = 0
+	}
+
+	// 5. Calculate uptime
+	uptimeStr := "0h 0m"
+	if err == nil && !startTime.IsZero() {
+		dur := time.Since(startTime)
+		if dur < 0 {
+			dur = 0
+		}
+		uptimeStr = fmt.Sprintf("%dh %dm", int(dur.Hours()), int(dur.Minutes())%60)
+	}
+
+	return uptimeStr, sessionEarnings
 }
 
 // GetActiveErrors returns all non-dismissed error rows, newest first.

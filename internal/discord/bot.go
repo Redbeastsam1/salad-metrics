@@ -111,6 +111,7 @@ func handleStatus(s *discordgo.Session, m *discordgo.MessageCreate) {
 		Color: color,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "💰 Wallet Balance", Value: fmt.Sprintf("$%.4f", currentBalance), Inline: true},
+			{Name: "💵 Session Earned", Value: fmt.Sprintf("+$%.4f", safeFloat(stats, "session_earnings")), Inline: true},
 			{Name: "🖥️ Status", Value: status, Inline: true},
 			{Name: "⏱️ Session Uptime", Value: safeStr(stats, "uptime", "0h 0m"), Inline: true},
 			{Name: "📦 Active Container", Value: activeContainer, Inline: false},

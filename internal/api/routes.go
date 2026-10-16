@@ -88,18 +88,7 @@ func apiData(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiStats(w http.ResponseWriter, r *http.Request) {
-	uptime := time.Since(sessionStart)
-	uptimeStr := fmt.Sprintf("%dh %dm", int(uptime.Hours()), int(uptime.Minutes())%60)
-
-	sessionEarnings := 0.0
-	startWallet := database.GetFirstWalletAfter(sessionStart)
-	latestWallet := database.GetLatestWallet()
-	if startWallet != nil && latestWallet != nil {
-		sessionEarnings = latestWallet.Current - startWallet.Current
-		if sessionEarnings < 0 {
-			sessionEarnings = 0
-		}
-	}
+	uptimeStr, sessionEarnings := database.GetSessionStats()
 
 	writeJSON(w, map[string]any{
 		"uptime":           uptimeStr,
