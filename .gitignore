@@ -1,12 +1,23 @@
-# Virtual Environments
-venv/
+# Binaries
+*.exe
+salad-metrics.exe
 
-# Secrets
+# Local SQLite Databases
+*.db
+*.db-shm
+*.db-wal
+salad_metrics.db
+
+# Secrets & Environment
 .env
 
-# Local Databases
-salad_metrics.db
+# Virtual Environments
+venv/
 
 # Python Caches
 __pycache__/
 *.py[cod]
+
+# IDE & Editor Configs
+.vscode/
+.idea/

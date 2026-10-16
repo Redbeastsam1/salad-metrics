@@ -75,10 +75,10 @@ def background_log_monitor():
         has_new_data = False
         
         # 1. Process Main Logs
-        main_files = [os.path.join(r, f) for r, _, fs in os.walk(log_dir) for f in fs if f.endswith('.txt') and "Bandwidth-SGS-" not in r and "ndm" not in r]
+        main_files = [f.path for f in os.scandir(log_dir) if f.is_file() and f.name.endswith(('.txt', '.log')) and f.name.startswith('log-')]
         main_files.sort(key=os.path.getmtime, reverse=True)
         
-        for file_path in main_files[:3]:
+        for file_path in main_files[:20]:
             last_mod = log_cache['files'].get(file_path, {}).get('last_modified', 0)
             if os.path.getmtime(file_path) > last_mod:
                 start_line = log_cache['files'].get(file_path, {}).get('last_line', 0)
@@ -99,10 +99,10 @@ def background_log_monitor():
                 log_cache['files'][file_path] = {'last_line': start_line + lines_read, 'last_modified': os.path.getmtime(file_path)}
 
         # 2. Process Bandwidth Logs
-        bw_files = [os.path.join(r, f) for r, _, fs in os.walk(log_dir) for f in fs if f.endswith('.txt') and "Bandwidth-SGS-" in r]
+        bw_files = [os.path.join(r, f) for r, _, fs in os.walk(log_dir) for f in fs if f.endswith(('.txt', '.log')) and "Bandwidth-SGS-" in r]
         bw_files.sort(key=os.path.getmtime, reverse=True)
         
-        for file_path in bw_files[:2]:
+        for file_path in bw_files[:20]:
             last_mod = bandwidth_cache['files'].get(file_path, {}).get('last_modified', 0)
             if os.path.getmtime(file_path) > last_mod:
                 start_line = bandwidth_cache['files'].get(file_path, {}).get('last_line', 0)
@@ -149,6 +149,11 @@ def api_errors():
 def api_dismiss_error():
     ts = bleach.clean(request.json.get('timestamp', ''), strip=True)
     db.dismiss_error(ts)
+    return jsonify({'status': 'success'})
+
+@app.route('/api/dismiss-all-errors', methods=['POST'])
+def api_dismiss_all_errors():
+    db.dismiss_all_errors()
     return jsonify({'status': 'success'})
 
 @app.route('/api/system-info', methods=['GET'])

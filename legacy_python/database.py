@@ -40,11 +40,15 @@ def get_data(hours=24):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
-    time_limit = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
-    
-    wallet = [dict(row) for row in c.execute('SELECT * FROM wallet WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
-    earnings = [dict(row) for row in c.execute('SELECT * FROM earnings WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
-    bandwidth = [dict(row) for row in c.execute('SELECT * FROM bandwidth WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
+    if hours == 0:  # 0 means "Lifetime" (Pull everything)
+        wallet = [dict(row) for row in c.execute('SELECT * FROM wallet ORDER BY timestamp').fetchall()]
+        earnings = [dict(row) for row in c.execute('SELECT * FROM earnings ORDER BY timestamp').fetchall()]
+        bandwidth = [dict(row) for row in c.execute('SELECT * FROM bandwidth ORDER BY timestamp').fetchall()]
+    else:
+        time_limit = (datetime.now() - timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
+        wallet = [dict(row) for row in c.execute('SELECT * FROM wallet WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
+        earnings = [dict(row) for row in c.execute('SELECT * FROM earnings WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
+        bandwidth = [dict(row) for row in c.execute('SELECT * FROM bandwidth WHERE timestamp >= ? ORDER BY timestamp', (time_limit,)).fetchall()]
     
     conn.close()
     return {'wallet': wallet, 'earnings': earnings, 'bandwidth': bandwidth}
@@ -61,5 +65,12 @@ def dismiss_error(timestamp):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('UPDATE errors SET dismissed = 1 WHERE timestamp = ?', (timestamp,))
+    conn.commit()
+    conn.close()
+
+def dismiss_all_errors():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('UPDATE errors SET dismissed = 1')
     conn.commit()
     conn.close()
