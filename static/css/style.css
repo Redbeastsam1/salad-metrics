@@ -121,6 +121,7 @@ body {
 }
 
 .header-controls { display: flex; align-items: center; gap: 12px; }
+.header-quick-actions { display: flex; align-items: center; gap: 8px; }
 
 /* Connection pill */
 .connection-pill {
@@ -776,19 +777,321 @@ body {
 /* ─── Misc ─── */
 .muted-center { color: var(--text-muted); text-align: center; font-size: 0.85rem; padding: 24px; }
 
-/* ═══════════════════════ RESPONSIVE ═══════════════════════ */
-@media (max-width: 1200px) {
-    .app-grid { grid-template-columns: repeat(2, 1fr); }
-    .panel-sysinfo { grid-column: span 2; }
-    .panel-hardware { grid-column: span 2; }
-    .panel-chart   { grid-column: span 2; }
-    .panel-wide    { grid-column: span 2; }
+/* ═══════════════════════ RESPONSIVE SYSTEM ═══════════════════════ */
+
+/* Global container constraints to prevent horizontal overflow */
+html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
 }
 
+/* ─── Tablet Breakpoint (<= 1100px) ─── */
+@media (max-width: 1100px) {
+    .app-header {
+        padding: 0 20px;
+    }
+    .app-grid {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 20px;
+        gap: 16px;
+    }
+    .panel-sysinfo,
+    .panel-hardware,
+    .panel-chart,
+    .panel-wide {
+        grid-column: span 2;
+    }
+}
+
+/* ─── Mobile Breakpoint (<= 768px) ─── */
 @media (max-width: 768px) {
-    .app-grid { grid-template-columns: 1fr; padding: 12px; }
-    .stat-hero, .panel { grid-column: 1 !important; }
-    .panel-wide { grid-column: 1 !important; }
-    .time-selector .time-btn { padding: 5px 8px; }
-    .brand-machine { display: none; }
+    /* Header: Two clean rows (Brand & Quick actions, then Time tabs) */
+    .app-header {
+        height: auto;
+        padding: 10px 14px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        position: sticky;
+        top: 0;
+    }
+
+    .header-brand {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .brand-icon {
+        font-size: 24px;
+    }
+
+    .brand-name {
+        font-size: 1.05rem;
+    }
+
+    .brand-machine {
+        display: none;
+    }
+
+    .connection-pill {
+        padding: 4px 9px;
+        font-size: 0.68rem;
+    }
+
+    .header-controls {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .header-quick-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        gap: 6px;
+        order: 1;
+    }
+
+    .currency-selector {
+        flex: 1;
+        max-width: 120px;
+    }
+
+    .currency-dropdown {
+        width: 100%;
+        padding: 5px 8px;
+        font-size: 0.72rem;
+    }
+
+    .dropdown-wrap {
+        display: inline-block;
+    }
+
+    .export-btn {
+        padding: 5px 10px;
+        font-size: 0.72rem;
+        gap: 4px;
+    }
+
+    .error-badge-btn {
+        padding: 5px 9px;
+        font-size: 0.72rem;
+        gap: 4px;
+    }
+
+    .error-badge-btn .error-badge-text {
+        display: none; /* Icon and count only on mobile */
+    }
+
+    .icon-btn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .time-selector {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        padding: 2px;
+        order: 2;
+    }
+
+    .time-selector .time-btn {
+        flex: 1;
+        padding: 6px 2px;
+        font-size: 0.72rem;
+        text-align: center;
+    }
+
+    /* ─── Grid: 2-column compact hero stats, full-width panels ─── */
+    .app-grid {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 12px 14px 76px 14px;
+        gap: 10px;
+    }
+
+    .app-grid.sidebar-open {
+        padding-right: 14px;
+    }
+
+    /* Hero stats: 2x2 grid */
+    .stat-hero {
+        grid-column: span 1 !important;
+        padding: 14px 14px;
+        border-radius: var(--radius-md);
+    }
+
+    .hero-label {
+        font-size: 0.68rem;
+        margin-bottom: 2px;
+    }
+
+    .hero-value {
+        font-size: 1.25rem;
+        margin-bottom: 2px;
+    }
+
+    .hero-sub {
+        font-size: 0.68rem;
+    }
+
+    .status-badge {
+        padding: 3px 8px;
+        font-size: 0.7rem;
+    }
+
+    /* Panels: Full width */
+    .panel {
+        grid-column: span 2 !important;
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
+    }
+
+    .panel-header {
+        margin-bottom: 12px;
+    }
+
+    .panel-title {
+        font-size: 0.8rem;
+    }
+
+    .panel-sub {
+        font-size: 0.7rem;
+    }
+
+    /* System Info: 1 column on mobile to prevent squished specs */
+    .sysinfo-grid {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .sysinfo-item {
+        padding: 8px 10px;
+        gap: 10px;
+    }
+
+    .sysinfo-icon {
+        font-size: 1.1rem;
+    }
+
+    .sysinfo-value {
+        font-size: 0.82rem;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    /* Live Hardware */
+    .hw-bars {
+        gap: 10px;
+    }
+
+    .hw-meta {
+        flex-wrap: wrap;
+        gap: 2px;
+    }
+
+    .hw-label {
+        font-size: 0.75rem;
+    }
+
+    .hw-val {
+        font-size: 0.75rem;
+    }
+
+    .hw-power-box {
+        margin-top: 12px;
+        padding: 8px 10px;
+    }
+
+    .hw-power-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+    }
+
+    .hw-power-item {
+        padding: 5px 6px;
+    }
+
+    .hw-power-label {
+        font-size: 0.6rem;
+    }
+
+    .hw-power-metric {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+    }
+
+    .hw-power-val {
+        font-size: 0.75rem;
+    }
+
+    .hw-power-sub {
+        font-size: 0.58rem;
+    }
+
+    /* Charts */
+    .chart-wrap {
+        height: 200px;
+    }
+
+    .panel-wide .chart-wrap {
+        height: 200px;
+    }
+
+    /* Drawers: full viewport width on mobile */
+    .error-sidebar {
+        width: 100vw;
+        max-width: 100vw;
+        top: 0;
+        z-index: 250;
+    }
+
+    .history-drawer {
+        width: 100vw;
+        max-width: 100vw;
+    }
+
+    /* Floating Action Button */
+    .history-fab {
+        bottom: 14px;
+        right: 14px;
+        padding: 7px 14px;
+        font-size: 0.75rem;
+    }
+
+    /* Toast Container */
+    .toast-container {
+        left: 10px;
+        right: 10px;
+        bottom: 60px;
+    }
+
+    .toast {
+        max-width: 100%;
+        padding: 10px 12px;
+    }
+}
+
+/* ─── Ultra-compact Mobile (<= 360px) ─── */
+@media (max-width: 360px) {
+    .hw-power-grid {
+        grid-template-columns: 1fr;
+    }
+    .stat-hero {
+        padding: 10px 12px;
+    }
+    .hero-value {
+        font-size: 1.1rem;
+    }
+    .time-selector .time-btn {
+        padding: 5px 1px;
+        font-size: 0.65rem;
+    }
 }
