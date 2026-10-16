@@ -40,6 +40,32 @@
                 <button class="time-btn" data-hours="4320">6M</button>
                 <button class="time-btn" data-hours="0">ALL</button>
             </div>
+            <div class="currency-selector">
+                <select id="currency-select" class="currency-dropdown" title="Display Currency">
+                    <option value="USD">USD ($)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="CAD">CAD (C$)</option>
+                    <option value="AUD">AUD (A$)</option>
+                </select>
+            </div>
+            <div class="dropdown-wrap">
+                <button class="icon-btn export-btn" id="export-menu-btn" title="Export CSV Data">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>CSV</span>
+                </button>
+                <div class="dropdown-menu" id="export-dropdown">
+                    <a href="/api/export?type=earnings" download class="dropdown-item">📊 Earnings History (.csv)</a>
+                    <a href="/api/export?type=wallet" download class="dropdown-item">💰 Wallet Balance (.csv)</a>
+                    <a href="/api/export?type=power" download class="dropdown-item">⚡ Power Telemetry (.csv)</a>
+                    <a href="/api/export?type=bandwidth" download class="dropdown-item">🌐 Bandwidth History (.csv)</a>
+                </div>
+            </div>
             <button class="error-badge-btn" id="error-toggle-btn" title="View Degraded Errors">
                 <span class="error-badge-icon">⚠️</span>
                 <span class="error-badge-text">Errors</span>
@@ -174,6 +200,13 @@
                             <span class="hw-power-val accent-blue" id="live-cpu-power">0 W</span>
                         </div>
                     </div>
+                    <div class="hw-power-item">
+                        <span class="hw-power-label">Efficiency</span>
+                        <div class="hw-power-metric">
+                            <span class="hw-power-val accent-green" id="live-efficiency-val">--</span>
+                            <span class="hw-power-sub">/kWh</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -194,12 +227,20 @@
             <div class="chart-wrap"><canvas id="containerChart"></canvas></div>
         </div>
 
-        <div class="panel panel-chart panel-wide">
+        <div class="panel panel-chart">
             <div class="panel-header">
                 <span class="panel-title">Bandwidth Throughput</span>
                 <span class="panel-sub">MB/s</span>
             </div>
             <div class="chart-wrap"><canvas id="bandwidthChart"></canvas></div>
+        </div>
+
+        <div class="panel panel-chart">
+            <div class="panel-header">
+                <span class="panel-title">Power Telemetry</span>
+                <span class="panel-sub">Watts (GPU / CPU / Total)</span>
+            </div>
+            <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
         </div>
 
     </main>

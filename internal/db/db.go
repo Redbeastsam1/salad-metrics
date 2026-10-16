@@ -2,7 +2,9 @@ package db
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -65,10 +67,17 @@ func (db *DB) initialize() error {
 		message TEXT NOT NULL,
 		dismissed INTEGER NOT NULL DEFAULT 0
 	);
+	CREATE TABLE IF NOT EXISTS power (
+		timestamp TEXT PRIMARY KEY,
+		gpu_power REAL NOT NULL,
+		cpu_power REAL NOT NULL,
+		total_power REAL NOT NULL
+	);
 	CREATE INDEX IF NOT EXISTS idx_wallet_ts    ON wallet(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_earnings_ts  ON earnings(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_bandwidth_ts ON bandwidth(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_errors_ts    ON errors(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_power_ts     ON power(timestamp);
 	`
 	if _, err := db.pool.Exec(schema); err != nil {
 		return fmt.Errorf("schema: %w", err)
@@ -173,6 +182,32 @@ func (db *DB) InsertErrors(rows []ErrorRow) {
 	tx.Commit()
 }
 
+// PowerRow represents one power consumption reading.
+type PowerRow struct {
+	Timestamp  string  `json:"timestamp"`
+	GPUPower   float64 `json:"gpu_power"`
+	CPUPower   float64 `json:"cpu_power"`
+	TotalPower float64 `json:"total_power"`
+}
+
+func (db *DB) InsertPower(rows []PowerRow) {
+	if len(rows) == 0 {
+		return
+	}
+	tx, _ := db.pool.Begin()
+	stmt, _ := tx.Prepare(`INSERT OR IGNORE INTO power (timestamp, gpu_power, cpu_power, total_power) VALUES (?, ?, ?, ?)`)
+	defer stmt.Close()
+	for _, r := range rows {
+		stmt.Exec(r.Timestamp, r.GPUPower, r.CPUPower, r.TotalPower)
+	}
+	tx.Commit()
+}
+
+func (db *DB) InsertSinglePower(r PowerRow) {
+	db.pool.Exec(`INSERT OR REPLACE INTO power (timestamp, gpu_power, cpu_power, total_power) VALUES (?, ?, ?, ?)`,
+		r.Timestamp, r.GPUPower, r.CPUPower, r.TotalPower)
+}
+
 // ─── Query Helpers ────────────────────────────────────────────────────────────
 
 // DashboardData is the full payload returned to the frontend.
@@ -180,9 +215,10 @@ type DashboardData struct {
 	Wallet    []map[string]any `json:"wallet"`
 	Earnings  []map[string]any `json:"earnings"`
 	Bandwidth []map[string]any `json:"bandwidth"`
+	Power     []map[string]any `json:"power"`
 }
 
-// GetData returns wallet, earnings, and bandwidth for the given hour window.
+// GetData returns wallet, earnings, bandwidth, and power for the given hour window.
 // hours=0 means "all time".
 func (db *DB) GetData(hours int) DashboardData {
 	var timeLimit string
@@ -194,6 +230,7 @@ func (db *DB) GetData(hours int) DashboardData {
 		Wallet:    db.queryRows("wallet", []string{"timestamp", "current"}, timeLimit),
 		Earnings:  db.queryRows("earnings", []string{"timestamp", "container_id", "rate"}, timeLimit),
 		Bandwidth: db.queryRows("bandwidth", []string{"timestamp", "throughput"}, timeLimit),
+		Power:     db.queryRows("power", []string{"timestamp", "gpu_power", "cpu_power", "total_power"}, timeLimit),
 	}
 }
 
@@ -288,4 +325,67 @@ func (db *DB) DismissError(timestamp string) {
 // DismissAllErrors marks all errors as dismissed.
 func (db *DB) DismissAllErrors() {
 	db.pool.Exec(`UPDATE errors SET dismissed = 1`)
+}
+
+// ExportCSV streams table data formatted as CSV to the writer.
+func (db *DB) ExportCSV(w io.Writer, table string) error {
+	var query string
+	switch table {
+	case "wallet":
+		query = "SELECT timestamp, current FROM wallet ORDER BY timestamp ASC"
+	case "earnings":
+		query = "SELECT timestamp, container_id, rate FROM earnings ORDER BY timestamp ASC"
+	case "bandwidth":
+		query = "SELECT timestamp, throughput FROM bandwidth ORDER BY timestamp ASC"
+	case "power":
+		query = "SELECT timestamp, gpu_power, cpu_power, total_power FROM power ORDER BY timestamp ASC"
+	case "errors":
+		query = "SELECT timestamp, message, dismissed FROM errors ORDER BY timestamp ASC"
+	default:
+		return fmt.Errorf("unknown table %s", table)
+	}
+
+	rows, err := db.pool.Query(query)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	cols, err := rows.Columns()
+	if err != nil {
+		return err
+	}
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Write header
+	if err := writer.Write(cols); err != nil {
+		return err
+	}
+
+	// Write rows
+	values := make([]any, len(cols))
+	scanArgs := make([]any, len(cols))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	for rows.Next() {
+		if err := rows.Scan(scanArgs...); err != nil {
+			return err
+		}
+		record := make([]string, len(cols))
+		for i, val := range values {
+			if val == nil {
+				record[i] = ""
+			} else {
+				record[i] = fmt.Sprintf("%v", val)
+			}
+		}
+		if err := writer.Write(record); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
 }

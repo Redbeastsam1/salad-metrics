@@ -47,6 +47,7 @@ func Serve(c *config.Config, d *db.DB, h *ws.Hub) {
 	mux.HandleFunc("/api/dismiss-all-errors", withCORS(apiDismissAllErrors))
 	mux.HandleFunc("/api/system-info", withCORS(apiSystemInfo))
 	mux.HandleFunc("/api/hardware-live", withCORS(apiHardwareLive))
+	mux.HandleFunc("/api/export", apiExport)
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	log.Printf("[server] 🥗 Salad Metrics running at http://localhost:%d", cfg.Port)
@@ -142,4 +143,30 @@ func apiSystemInfo(w http.ResponseWriter, r *http.Request) {
 func apiHardwareLive(w http.ResponseWriter, r *http.Request) {
 	// Returns cached value — no blocking, responds in microseconds
 	writeJSON(w, hardware.Get())
+}
+
+func apiExport(w http.ResponseWriter, r *http.Request) {
+	table := r.URL.Query().Get("type")
+	if table == "" {
+		table = "earnings"
+	}
+	validTables := map[string]bool{
+		"earnings":  true,
+		"wallet":    true,
+		"bandwidth": true,
+		"power":     true,
+		"errors":    true,
+	}
+	if !validTables[table] {
+		http.Error(w, "Invalid export type", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"salad_%s_%s.csv\"", table, time.Now().Format("20060102_150405")))
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if err := database.ExportCSV(w, table); err != nil {
+		log.Printf("[export] Error generating CSV for %s: %v", table, err)
+	}
 }

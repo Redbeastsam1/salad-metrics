@@ -7,6 +7,12 @@ echo ============================================
 REM Default configuration
 set MACHINE_NAME=Beast
 set DISCORD_BOT_TOKEN=
+set SILENT_FLAG=
+
+REM Check for silent / tray-only flag
+if "%1"=="--silent" set SILENT_FLAG=-silent
+if "%1"=="-silent"  set SILENT_FLAG=-silent
+if "%1"=="silent"   set SILENT_FLAG=-silent
 
 REM Load .env if present
 if exist .env (
@@ -15,15 +21,13 @@ if exist .env (
     )
 )
 
-if not exist salad-metrics.exe (
-    echo [INFO] Compiling salad-metrics.exe...
-    go build -o salad-metrics.exe .
-)
+echo [INFO] Building salad-metrics.exe...
+go build -o salad-metrics.exe .
 
 if "%DISCORD_BOT_TOKEN%"=="" (
-    salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%"
+    salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%" %SILENT_FLAG%
 ) else (
-    salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%" -discord -discord-token "%DISCORD_BOT_TOKEN%"
+    salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%" -discord -discord-token "%DISCORD_BOT_TOKEN%" %SILENT_FLAG%
 )
 
 pause

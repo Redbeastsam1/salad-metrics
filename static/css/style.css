@@ -228,6 +228,84 @@ body {
 }
 .icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); border-color: var(--border-strong); }
 
+/* Currency Selector */
+.currency-selector {
+    display: flex;
+    align-items: center;
+}
+.currency-dropdown {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: var(--radius-md);
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    outline: none;
+    transition: var(--transition);
+}
+.currency-dropdown:hover, .currency-dropdown:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border-strong);
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.15);
+}
+.currency-dropdown option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
+/* Export Dropdown */
+.dropdown-wrap {
+    position: relative;
+    display: inline-block;
+}
+.export-btn {
+    width: auto;
+    padding: 6px 12px;
+    gap: 6px;
+    border-radius: var(--radius-md);
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+}
+.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+    padding: 6px;
+    min-width: 215px;
+    z-index: 200;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    backdrop-filter: blur(12px);
+}
+.dropdown-menu.show {
+    display: flex;
+}
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.78rem;
+    font-weight: 500;
+    transition: var(--transition);
+}
+.dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
 /* ═══════════════════════ MAIN GRID ═══════════════════════ */
 .app-grid {
     display: grid;
@@ -439,8 +517,8 @@ body {
 }
 .hw-power-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
 }
 .hw-power-item {
     display: flex;

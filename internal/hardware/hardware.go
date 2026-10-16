@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"salad-metrics/internal/db"
+
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -77,16 +79,31 @@ func Get() Stats {
 	return *p
 }
 
-// StartPoller launches a background goroutine that refreshes hardware stats every 2 seconds.
-func StartPoller() {
+// StartPoller launches a background goroutine that refreshes hardware stats every 2 seconds
+// and records power readings into SQLite every 30 seconds.
+func StartPoller(database *db.DB) {
 	go func() {
+		tickCount := 0
 		for {
 			s := poll()
 			cached.Store(&s)
+
+			// Record to DB immediately on first tick, then every 15 ticks (every 30 seconds)
+			if database != nil && (tickCount == 0 || tickCount%15 == 0) {
+				ts := time.Now().Format("2006-01-02 15:04:05")
+				database.InsertSinglePower(db.PowerRow{
+					Timestamp:  ts,
+					GPUPower:   s.GPUPower,
+					CPUPower:   s.CPUPower,
+					TotalPower: s.TotalPower,
+				})
+			}
+
+			tickCount++
 			time.Sleep(2 * time.Second)
 		}
 	}()
-	log.Println("[hardware] Poller started (2s interval).")
+	log.Println("[hardware] Poller started (2s live cache, 30s DB logging).")
 }
 
 func poll() Stats {

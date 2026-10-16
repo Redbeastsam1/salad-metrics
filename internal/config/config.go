@@ -10,6 +10,8 @@ type Config struct {
 	DBFile         string
 	DiscordEnabled bool
 	DiscordToken   string
+	TrayEnabled    bool
+	HideConsole    bool
 }
 
 // Parse reads CLI flags and returns a populated Config.
@@ -21,6 +23,9 @@ func Parse() *Config {
 	flag.StringVar(&cfg.DBFile, "db", "salad_metrics.db", "Path to SQLite database file")
 	flag.BoolVar(&cfg.DiscordEnabled, "discord", false, "Enable the Discord bot")
 	flag.StringVar(&cfg.DiscordToken, "discord-token", "", "Discord bot token (or set DISCORD_BOT_TOKEN env var)")
+	flag.BoolVar(&cfg.TrayEnabled, "tray", true, "Enable Windows system tray icon")
+	flag.BoolVar(&cfg.HideConsole, "hide-console", false, "Hide the console window on startup (runs silently in tray)")
+	flag.BoolVar(&cfg.HideConsole, "silent", false, "Alias for -hide-console")
 	flag.Parse()
 	return cfg
 }

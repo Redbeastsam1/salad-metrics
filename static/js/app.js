@@ -8,10 +8,71 @@
 // ─── State ─────────────────────────────────────────────
 let isDarkMode    = JSON.parse(localStorage.getItem('isDarkMode') ?? 'true');
 let currentHours  = 24;
-let walletChart, containerChart, bandwidthChart;
+let walletChart, containerChart, bandwidthChart, powerChart;
 let notifiedErrors    = new Set();
 let isFirstErrorLoad  = true;
 let errorSidebarOpen  = false;
+
+let lastWalletUSD          = 0;
+let lastSessionEarningsUSD = 0;
+let lastCurrentRateUSD     = 0;
+let lastTotalPowerWatts    = 0;
+
+const CURRENCIES = {
+    USD: { symbol: '$', rate: 1.0 },
+    INR: { symbol: '₹', rate: 86.5 },
+    EUR: { symbol: '€', rate: 0.92 },
+    GBP: { symbol: '£', rate: 0.79 },
+    CAD: { symbol: 'CA$', rate: 1.38 },
+    AUD: { symbol: 'AU$', rate: 1.55 }
+};
+let activeCurrency = localStorage.getItem('selectedCurrency') || 'USD';
+
+function formatCurrency(usdVal, decimals = 4, withPrefix = '') {
+    const num = parseFloat(usdVal) || 0;
+    const curr = CURRENCIES[activeCurrency] || CURRENCIES.USD;
+    const converted = num * curr.rate;
+    return `${withPrefix}${curr.symbol}${converted.toFixed(decimals)}`;
+}
+
+async function fetchExchangeRates() {
+    try {
+        const res = await fetch('https://open.er-api.com/v6/latest/USD');
+        const data = await res.json();
+        if (data && data.rates) {
+            for (const code of Object.keys(CURRENCIES)) {
+                if (data.rates[code]) CURRENCIES[code].rate = data.rates[code];
+            }
+            refreshCurrencyDisplays();
+        }
+    } catch (e) {
+        console.log('[currency] Using standard rates');
+    }
+}
+
+function refreshCurrencyDisplays() {
+    animateValue('wallet-balance-text', formatCurrency(lastWalletUSD));
+    animateValue('session-earnings', formatCurrency(lastSessionEarningsUSD, 4, '+'));
+    animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+    updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
+    fetchDashboardData();
+}
+
+function updateEfficiency(rateUSD, totalWatts) {
+    const effEl = document.getElementById('live-efficiency-val');
+    if (!effEl) return;
+    if (!rateUSD || rateUSD <= 0 || !totalWatts || totalWatts <= 0) {
+        effEl.textContent = '--';
+        return;
+    }
+    const dailyKWh = (totalWatts * 24.0) / 1000.0;
+    if (dailyKWh <= 0) {
+        effEl.textContent = '--';
+        return;
+    }
+    const effPerKWh = rateUSD / dailyKWh;
+    effEl.textContent = formatCurrency(effPerKWh, 3);
+}
 
 // ─── WebSocket Connection (native, replaces Socket.IO) ─
 let ws;
@@ -137,6 +198,7 @@ function initCharts() {
     const wCtx = document.getElementById('walletChart').getContext('2d');
     const cCtx = document.getElementById('containerChart').getContext('2d');
     const bCtx = document.getElementById('bandwidthChart').getContext('2d');
+    const pCtx = document.getElementById('powerChart').getContext('2d');
 
     walletChart = new Chart(wCtx, {
         type: 'line', data: { datasets: [] }, options: baseOptions()
@@ -147,11 +209,15 @@ function initCharts() {
     bandwidthChart = new Chart(bCtx, {
         type: 'line', data: { datasets: [] }, options: baseOptions()
     });
+    powerChart = new Chart(pCtx, {
+        type: 'line', data: { datasets: [] }, options: baseOptions()
+    });
 }
 
 function updateChartColors() {
     if (!walletChart) return;
-    [walletChart, containerChart, bandwidthChart].forEach(chart => {
+    [walletChart, containerChart, bandwidthChart, powerChart].forEach(chart => {
+        if (!chart) return;
         chart.options.scales.x.grid.color = getGridColor();
         chart.options.scales.x.ticks.color = getTextColor();
         chart.options.scales.y.grid.color = getGridColor();
@@ -168,7 +234,8 @@ async function fetchDashboardData() {
         const now  = new Date();
 
         // Apply time window to all charts
-        [walletChart, containerChart, bandwidthChart].forEach(chart => {
+        [walletChart, containerChart, bandwidthChart, powerChart].forEach(chart => {
+            if (!chart) return;
             if (currentHours === 0) {
                 delete chart.options.scales.x.min;
                 delete chart.options.scales.x.max;
@@ -178,14 +245,18 @@ async function fetchDashboardData() {
             }
         });
 
+        const curr = CURRENCIES[activeCurrency] || CURRENCIES.USD;
+
         // ── Wallet ──
         if (data.wallet?.length > 0) {
             const last = data.wallet[data.wallet.length - 1];
-            animateValue('wallet-balance-text', `$${parseFloat(last.current).toFixed(4)}`);
+            lastWalletUSD = parseFloat(last.current) || 0;
+            animateValue('wallet-balance-text', formatCurrency(lastWalletUSD));
 
             const wCtx = walletChart.canvas.getContext('2d');
             walletChart.data.datasets = [{
-                data: data.wallet.map(d => ({ x: new Date(d.timestamp), y: d.current })),
+                label: `Wallet (${curr.symbol})`,
+                data: data.wallet.map(d => ({ x: new Date(d.timestamp), y: d.current * curr.rate })),
                 borderColor: '#00ff88',
                 backgroundColor: makeGradient(wCtx, 'rgba(0,255,136,1)'),
                 fill: true
@@ -197,6 +268,7 @@ async function fetchDashboardData() {
         if (data.bandwidth?.length > 0) {
             const bCtx = bandwidthChart.canvas.getContext('2d');
             bandwidthChart.data.datasets = [{
+                label: 'Throughput (MB/s)',
                 data: data.bandwidth.map(d => ({ x: new Date(d.timestamp), y: d.throughput })),
                 borderColor: '#22d3ee',
                 backgroundColor: makeGradient(bCtx, 'rgba(34,211,238,1)'),
@@ -205,13 +277,42 @@ async function fetchDashboardData() {
             bandwidthChart.update();
         }
 
+        // ── Power Telemetry ──
+        if (data.power?.length > 0 && powerChart) {
+            const pCtx = powerChart.canvas.getContext('2d');
+            powerChart.data.datasets = [
+                {
+                    label: 'Total Power (W)',
+                    data: data.power.map(d => ({ x: new Date(d.timestamp), y: d.total_power })),
+                    borderColor: '#ffd700',
+                    backgroundColor: makeGradient(pCtx, 'rgba(255,215,0,1)'),
+                    fill: false
+                },
+                {
+                    label: 'GPU Power (W)',
+                    data: data.power.map(d => ({ x: new Date(d.timestamp), y: d.gpu_power })),
+                    borderColor: '#a855f7',
+                    backgroundColor: makeGradient(pCtx, 'rgba(168,85,247,1)'),
+                    fill: false
+                },
+                {
+                    label: 'CPU Power (W)',
+                    data: data.power.map(d => ({ x: new Date(d.timestamp), y: d.cpu_power })),
+                    borderColor: '#4d9fff',
+                    backgroundColor: makeGradient(pCtx, 'rgba(77,159,255,1)'),
+                    fill: false
+                }
+            ];
+            powerChart.update();
+        }
+
         // ── Earnings / Containers ──
         const containersMap = {};
         (data.earnings ?? []).forEach(d => {
             const id = d.container_id;
             const ts = new Date(d.timestamp);
             if (!containersMap[id]) containersMap[id] = { data: [], start: ts, rate: 0 };
-            containersMap[id].data.push({ x: ts, y: d.rate });
+            containersMap[id].data.push({ x: ts, y: d.rate * curr.rate });
             containersMap[id].rate = d.rate;
             if (ts < containersMap[id].start) containersMap[id].start = ts;
         });
@@ -238,7 +339,8 @@ async function fetchStats() {
         const res   = await fetch('/api/stats');
         const stats = await res.json();
         document.getElementById('session-uptime').textContent = `Uptime: ${stats.uptime}`;
-        animateValue('session-earnings', `+$${parseFloat(stats.session_earnings).toFixed(4)}`);
+        lastSessionEarningsUSD = parseFloat(stats.session_earnings) || 0;
+        animateValue('session-earnings', formatCurrency(lastSessionEarningsUSD, 4, '+'));
         if (stats.machine_name) {
             document.getElementById('machine-name-label').textContent = stats.machine_name;
         }
@@ -283,6 +385,9 @@ async function updateLiveHardware() {
         const cpuPowerEl = document.getElementById('live-cpu-power');
         if (cpuPowerEl) cpuPowerEl.textContent = `~${(data.cpu_power ?? 0).toFixed(1)} W`;
 
+        lastTotalPowerWatts = data.total_power ?? 0;
+        updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
+
     } catch (e) {}
 }
 
@@ -302,7 +407,9 @@ function updateStatusCard(earnings) {
         badge.className = 'status-badge idle';
         statusText.textContent = 'Idle';
         containerLabel.textContent = 'No active container';
-        rateEl.textContent = '$0.0000';
+        lastCurrentRateUSD = 0;
+        rateEl.textContent = formatCurrency(0);
+        updateEfficiency(0, lastTotalPowerWatts);
         return;
     }
 
@@ -319,7 +426,9 @@ function updateStatusCard(earnings) {
 
     const id = latest.container_id ?? '';
     containerLabel.textContent = id.length > 8 ? `${id.substring(0, 8)}...` : id;
-    animateValue('current-rate', `$${rate.toFixed(4)}`);
+    lastCurrentRateUSD = rate;
+    animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+    updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
 }
 
 // ─── Container History ─────────────────────────────────
@@ -339,7 +448,7 @@ function renderContainerHistory(containersMap) {
         <div class="history-card">
             <div class="history-card-header">
                 <span class="history-id">${id.substring(0, 8)}...</span>
-                <span class="history-rate">$${c.rate.toFixed(4)}/24h</span>
+                <span class="history-rate">${formatCurrency(c.rate)}/24h</span>
             </div>
             <div class="history-time">Started ${dateStr} at ${startStr}</div>
         </div>`;
@@ -496,11 +605,36 @@ document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     connectWS();
 
+    // Currency selector initialization
+    const currencySelect = document.getElementById('currency-select');
+    if (currencySelect) {
+        currencySelect.value = activeCurrency;
+        currencySelect.addEventListener('change', (e) => {
+            activeCurrency = e.target.value;
+            localStorage.setItem('selectedCurrency', activeCurrency);
+            refreshCurrencyDisplays();
+        });
+    }
+
+    // Export dropdown toggle
+    const exportBtn = document.getElementById('export-menu-btn');
+    const exportMenu = document.getElementById('export-dropdown');
+    if (exportBtn && exportMenu) {
+        exportBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            exportMenu.classList.toggle('show');
+        });
+        document.addEventListener('click', () => {
+            exportMenu.classList.remove('show');
+        });
+    }
+
     // Initial data load
     fetchDashboardData();
     fetchSystemInfo();
     fetchStats();
     fetchErrors();
+    fetchExchangeRates();
 
     // Periodic refresh fallback (even if WS is healthy)
     setInterval(fetchStats, 60_000);
