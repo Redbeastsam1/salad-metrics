@@ -83,6 +83,8 @@ function connectWS() {
     ws.onopen = () => {
         setConnectionStatus(true);
         console.log('[ws] Connected');
+        fetchDashboardData();
+        fetchStats();
     };
 
     ws.onmessage = (evt) => {
@@ -341,6 +343,10 @@ async function fetchStats() {
         document.getElementById('session-uptime').textContent = `Uptime: ${stats.uptime}`;
         lastSessionEarningsUSD = parseFloat(stats.session_earnings) || 0;
         animateValue('session-earnings', formatCurrency(lastSessionEarningsUSD, 4, '+'));
+        if (stats.wallet_balance !== undefined && stats.wallet_balance !== null) {
+            lastWalletUSD = parseFloat(stats.wallet_balance) || 0;
+            animateValue('wallet-balance-text', formatCurrency(lastWalletUSD));
+        }
         if (stats.machine_name) {
             document.getElementById('machine-name-label').textContent = stats.machine_name;
         }
@@ -638,6 +644,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Periodic refresh fallback (even if WS is healthy)
     setInterval(fetchStats, 10_000);
+    setInterval(fetchDashboardData, 10_000);
     setInterval(updateLiveHardware, 2000);
     updateLiveHardware();
 });

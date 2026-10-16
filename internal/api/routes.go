@@ -89,10 +89,16 @@ func apiData(w http.ResponseWriter, r *http.Request) {
 
 func apiStats(w http.ResponseWriter, r *http.Request) {
 	uptimeStr, sessionEarnings := database.GetSessionStats()
+	latestWallet := database.GetLatestWallet()
+	var walletBal float64
+	if latestWallet != nil {
+		walletBal = latestWallet.Current
+	}
 
 	writeJSON(w, map[string]any{
 		"uptime":           uptimeStr,
 		"session_earnings": sessionEarnings,
+		"wallet_balance":   walletBal,
 		"machine_name":     cfg.MachineName,
 	})
 }

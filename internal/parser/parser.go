@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,10 +84,22 @@ func ParseFile(path string, isBandwidth bool) (ParsedData, bool) {
 		fileStates[path] = state
 	}
 
+	// Fast stat check: skip read if file hasn't grown
+	fi, err := f.Stat()
+	if err != nil {
+		return result, false
+	}
+	if fi.Size() < state.Offset {
+		// File was rotated or truncated — reset offset
+		state.Offset = 0
+	} else if fi.Size() == state.Offset {
+		// No new data
+		return result, false
+	}
+
 	// Seek to where we left off
 	if state.Offset > 0 {
 		if _, err := f.Seek(state.Offset, io.SeekStart); err != nil {
-			// File may have been rotated — reset offset
 			state.Offset = 0
 			f.Seek(0, io.SeekStart)
 		}
@@ -97,10 +110,17 @@ func ParseFile(path string, isBandwidth bool) (ParsedData, bool) {
 		return result, false
 	}
 
-	// Update the offset for next call
-	state.Offset += int64(len(content))
+	// Ensure we only parse complete lines up to the last newline
+	lastNewline := bytes.LastIndexByte(content, '\n')
+	if lastNewline == -1 {
+		// Incomplete line still being written — do not advance offset yet
+		return result, false
+	}
 
-	text := string(content)
+	toProcess := content[:lastNewline+1]
+	state.Offset += int64(lastNewline + 1)
+
+	text := string(toProcess)
 
 	// --- Earnings ---
 	for _, m := range earningsRe.FindAllStringSubmatch(text, -1) {

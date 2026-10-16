@@ -32,8 +32,16 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 	// Watch the root log dir and all existing subdirectories
 	watchDirRecursive(watcher, logDir)
 
+	// Periodic poll fallback for Windows file locks/buffered appends
+	pollTicker := time.NewTicker(3 * time.Second)
+	defer pollTicker.Stop()
+
 	for {
 		select {
+		case <-pollTicker.C:
+			// Periodic poll scan — fast since Stat() skips unchanged files
+			scanAndParse(logDir, database, hub, false)
+
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
@@ -91,8 +99,10 @@ func handleFileChange(path string, database *db.DB, hub *ws.Hub) {
 		len(data.Wallet), len(data.Earnings), len(data.Bandwidth), len(data.Errors))
 }
 
-// scanAndParse does the initial startup parse of all existing log files.
+// scanAndParse does the initial startup parse of all existing log files,
+// and acts as the periodic fallback sweep.
 func scanAndParse(logDir string, database *db.DB, hub *ws.Hub, silent bool) {
+	anyNewData := false
 	_ = filepath.Walk(logDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
@@ -107,12 +117,17 @@ func scanAndParse(logDir string, database *db.DB, hub *ws.Hub, silent bool) {
 			database.InsertEarnings(data.Earnings)
 			database.InsertBandwidth(data.Bandwidth)
 			database.InsertErrors(data.Errors)
-			if !silent {
-				hub.Broadcast("data_updated", map[string]any{"message": "Startup parse complete"})
-			}
+			anyNewData = true
+			log.Printf("[watcher] Processed %s: W=%d E=%d BW=%d ERR=%d",
+				filepath.Base(path),
+				len(data.Wallet), len(data.Earnings), len(data.Bandwidth), len(data.Errors))
 		}
 		return nil
 	})
+
+	if anyNewData && !silent {
+		hub.Broadcast("data_updated", map[string]any{"message": "New data available"})
+	}
 }
 
 // watchDirRecursive adds a directory and all its subdirectories to the watcher.
