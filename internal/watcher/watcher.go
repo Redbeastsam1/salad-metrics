@@ -33,7 +33,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 	watchDirRecursive(watcher, logDir)
 
 	// Periodic poll fallback for Windows file locks/buffered appends
-	pollTicker := time.NewTicker(3 * time.Second)
+	pollTicker := time.NewTicker(30 * time.Second)
 	defer pollTicker.Stop()
 
 	for {
