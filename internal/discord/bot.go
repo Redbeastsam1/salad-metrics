@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -14,8 +15,10 @@ import (
 )
 
 var (
-	cfg    *config.Config
-	apiURL string
+	cfg        *config.Config
+	apiURL     string
+	botSession *discordgo.Session
+	channelID  string
 )
 
 // Run starts the Discord bot. Blocks until the process is killed.
@@ -38,6 +41,9 @@ func Run(c *config.Config) {
 		return
 	}
 
+	botSession = dg
+	channelID = os.Getenv("DISCORD_CHANNEL_ID")
+
 	dg.AddHandler(onReady)
 	dg.AddHandler(onMessage)
 	dg.Identify.Intents = discordgo.IntentsGuildMessages
@@ -49,6 +55,54 @@ func Run(c *config.Config) {
 
 	log.Printf("[discord] Bot running. Monitoring %s.", cfg.MachineName)
 	select {} // Block forever
+}
+
+// SendCrashAlert sends an embed alert when a machine stops reporting or comes back online.
+func SendCrashAlert(machine string, online bool, dur time.Duration) {
+	if botSession == nil {
+		return
+	}
+	targetChannel := channelID
+	if targetChannel == "" {
+		targetChannel = os.Getenv("DISCORD_CHANNEL_ID")
+	}
+	if targetChannel == "" {
+		for _, guild := range botSession.State.Guilds {
+			channels, err := botSession.GuildChannels(guild.ID)
+			if err == nil {
+				for _, ch := range channels {
+					if ch.Type == discordgo.ChannelTypeGuildText {
+						targetChannel = ch.ID
+						break
+					}
+				}
+			}
+			if targetChannel != "" {
+				break
+			}
+		}
+	}
+	if targetChannel == "" {
+		return
+	}
+
+	var embed *discordgo.MessageEmbed
+	if online {
+		embed = &discordgo.MessageEmbed{
+			Title:       fmt.Sprintf("🟢 %s is Back Online!", machine),
+			Description: fmt.Sprintf("Mining node **`%s`** resumed reporting telemetry to the Hub.", machine),
+			Color:       0x00FF88,
+			Timestamp:   time.Now().Format(time.RFC3339),
+		}
+	} else {
+		embed = &discordgo.MessageEmbed{
+			Title:       fmt.Sprintf("🚨 ALERT: %s is OFFLINE / CRASHED!", machine),
+			Description: fmt.Sprintf("⚠️ Mining node **`%s`** missed heartbeats for over **%s**.\nPossible BSOD, system freeze, or power loss detected!", machine, dur.Round(time.Second)),
+			Color:       0xFF4757,
+			Timestamp:   time.Now().Format(time.RFC3339),
+		}
+	}
+	botSession.ChannelMessageSendEmbed(targetChannel, embed)
 }
 
 func onReady(s *discordgo.Session, e *discordgo.Ready) {

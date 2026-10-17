@@ -11,6 +11,7 @@ import (
 	"salad-metrics/internal/config"
 	"salad-metrics/internal/db"
 	"salad-metrics/internal/hardware"
+	hubPkg "salad-metrics/internal/hub"
 	"salad-metrics/internal/parser"
 	"salad-metrics/internal/ws"
 )
@@ -42,6 +43,7 @@ func Serve(c *config.Config, d *db.DB, h *ws.Hub) {
 	// REST API
 	mux.HandleFunc("/api/data", withCORS(apiData))
 	mux.HandleFunc("/api/stats", withCORS(apiStats))
+	mux.HandleFunc("/api/ingest", withCORS(apiIngest))
 	mux.HandleFunc("/api/errors", withCORS(apiErrors))
 	mux.HandleFunc("/api/dismiss-error", withCORS(apiDismissError))
 	mux.HandleFunc("/api/dismiss-all-errors", withCORS(apiDismissAllErrors))
@@ -95,12 +97,31 @@ func apiStats(w http.ResponseWriter, r *http.Request) {
 		walletBal = latestWallet.Current
 	}
 
+	machineState := hubPkg.GetMachineStatus(cfg.MachineName)
+
 	writeJSON(w, map[string]any{
 		"uptime":           uptimeStr,
 		"session_earnings": sessionEarnings,
 		"wallet_balance":   walletBal,
 		"machine_name":     cfg.MachineName,
+		"is_online":        machineState.IsOnline,
+		"last_seen_secs":   machineState.LastSeenSecs,
+		"mode":             cfg.Mode,
 	})
+}
+
+func apiIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var payload hubPkg.IngestPayload
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, fmt.Sprintf("Bad request: %v", err), http.StatusBadRequest)
+		return
+	}
+	hubPkg.ProcessIngest(database, hub, &payload)
+	writeJSON(w, map[string]any{"status": "success"})
 }
 
 func apiErrors(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +151,10 @@ func apiDismissAllErrors(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiSystemInfo(w http.ResponseWriter, r *http.Request) {
+	if cached := parser.GetCachedSystemInfo(); cached != nil {
+		writeJSON(w, cached)
+		return
+	}
 	sysDir := cfg.LogDir + `\systeminformation`
 	info := parser.ParseSystemInfo(sysDir)
 	writeJSON(w, info)

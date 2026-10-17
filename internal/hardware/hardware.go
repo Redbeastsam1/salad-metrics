@@ -70,6 +70,13 @@ func estimateCPUPower(load float64) float64 {
 	return math.Round(watts*10) / 10
 }
 
+// SetCached updates the atomically cached hardware stats externally (e.g. from an agent report).
+func SetCached(s *Stats) {
+	if s != nil {
+		cached.Store(s)
+	}
+}
+
 // Get returns the most recently cached hardware stats (non-blocking, microseconds).
 func Get() Stats {
 	p := cached.Load()

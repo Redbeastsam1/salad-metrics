@@ -1,9 +1,15 @@
 package config
 
-import "flag"
+import (
+	"flag"
+	"os"
+	"strings"
+)
 
-// Config holds all runtime configuration parsed from CLI flags.
+// Config holds all runtime configuration parsed from CLI flags and environment variables.
 type Config struct {
+	Mode           string // "standalone", "server" (hub), "agent" (worker)
+	ServerURL      string // e.g. "http://192.168.1.100:8000" (agent mode)
 	Port           int
 	MachineName    string
 	LogDir         string
@@ -14,9 +20,11 @@ type Config struct {
 	HideConsole    bool
 }
 
-// Parse reads CLI flags and returns a populated Config.
+// Parse reads CLI flags and environment variables and returns a populated Config.
 func Parse() *Config {
 	cfg := &Config{}
+	flag.StringVar(&cfg.Mode, "mode", "standalone", "Run mode: standalone, server, or agent")
+	flag.StringVar(&cfg.ServerURL, "server", "", "Hub server URL for agent mode (e.g. http://192.168.1.100:8000)")
 	flag.IntVar(&cfg.Port, "port", 8000, "HTTP server port")
 	flag.StringVar(&cfg.MachineName, "machine-name", "Beast", "Display name for this machine")
 	flag.StringVar(&cfg.LogDir, "log-dir", `C:\ProgramData\Salad\logs`, "Path to Salad log directory")
@@ -27,5 +35,26 @@ func Parse() *Config {
 	flag.BoolVar(&cfg.HideConsole, "hide-console", false, "Hide the console window on startup (runs silently in tray)")
 	flag.BoolVar(&cfg.HideConsole, "silent", false, "Alias for -hide-console")
 	flag.Parse()
+
+	// Environment variable overrides / fallbacks
+	if envMode := os.Getenv("SALAD_MODE"); envMode != "" && cfg.Mode == "standalone" {
+		cfg.Mode = envMode
+	}
+	if envServer := os.Getenv("SERVER_URL"); envServer != "" && cfg.ServerURL == "" {
+		cfg.ServerURL = envServer
+	}
+	if envMachine := os.Getenv("MACHINE_NAME"); envMachine != "" && cfg.MachineName == "Beast" {
+		cfg.MachineName = envMachine
+	}
+	if envToken := os.Getenv("DISCORD_BOT_TOKEN"); envToken != "" && cfg.DiscordToken == "" {
+		cfg.DiscordToken = envToken
+		cfg.DiscordEnabled = true
+	}
+
+	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
+	if cfg.ServerURL != "" {
+		cfg.ServerURL = strings.TrimRight(cfg.ServerURL, "/")
+	}
+
 	return cfg
 }

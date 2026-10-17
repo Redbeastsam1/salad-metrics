@@ -163,10 +163,12 @@ When running in Server Mode on Ubuntu:
 
 ---
 
-## 📌 Implementation Checklist (When Ready)
+## 📌 Implementation Status
 
-- [ ] Add `-mode=server` and `-mode=agent` flags to `internal/config/config.go`
-- [ ] Implement `POST /api/ingest` handler on Hub
-- [ ] Add agent HTTP client loop in `internal/agent/` to stream log events and hardware stats
-- [ ] Add heartbeat watchdog on Hub to detect offline/crashed states
-- [ ] Compile `salad-metrics-linux` and copy to Ubuntu Server
+- [x] Added `-mode=server` and `-mode=agent` flags in `internal/config/config.go`
+- [x] Implemented `POST /api/ingest` endpoint on Hub server in `internal/api/routes.go`
+- [x] Added agent streaming loop in `internal/agent/agent.go` with auto-reconnect & queue retention
+- [x] Added heartbeat & crash watchdog in `internal/hub/hub.go`
+- [x] Added automated Discord crash embed alerts in `internal/discord/bot.go`
+- [x] Added `Offline / Crashed` red indicator and last seen timer in `static/js/app.js` and `static/css/style.css`
+- [x] Created multi-stage `Dockerfile`, `docker-compose.yml`, and `.dockerignore` for 1-command Ubuntu deployment

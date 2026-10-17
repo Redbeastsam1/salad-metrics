@@ -24,7 +24,10 @@ if exist .env (
 echo [INFO] Building salad-metrics.exe...
 go build -o salad-metrics.exe .
 
-if "%DISCORD_BOT_TOKEN%"=="" (
+if not "%SERVER_URL%"=="" (
+    echo [INFO] Running in Agent mode -> %SERVER_URL%
+    salad-metrics.exe -mode agent -server "%SERVER_URL%" -machine-name "%MACHINE_NAME%" %SILENT_FLAG%
+) else if "%DISCORD_BOT_TOKEN%"=="" (
     salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%" %SILENT_FLAG%
 ) else (
     salad-metrics.exe -port 8000 -machine-name "%MACHINE_NAME%" -discord -discord-token "%DISCORD_BOT_TOKEN%" %SILENT_FLAG%

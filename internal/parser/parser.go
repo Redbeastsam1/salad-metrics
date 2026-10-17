@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"salad-metrics/internal/db"
 )
@@ -190,6 +191,18 @@ type SysInfo struct {
 	GPU string `json:"GPU"`
 	RAM string `json:"RAM"`
 	OS  string `json:"OS"`
+}
+
+var cachedSysInfo atomic.Pointer[SysInfo]
+
+// SetCachedSystemInfo sets the static system info from an agent payload.
+func SetCachedSystemInfo(info SysInfo) {
+	cachedSysInfo.Store(&info)
+}
+
+// GetCachedSystemInfo returns the cached static system info if available.
+func GetCachedSystemInfo() *SysInfo {
+	return cachedSysInfo.Load()
 }
 
 // ParseSystemInfo reads the most recent system info log file and extracts hardware details.

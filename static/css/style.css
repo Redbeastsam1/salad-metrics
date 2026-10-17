@@ -386,12 +386,23 @@ body {
     color: var(--accent-gold);
     border: 1px solid rgba(255,215,0,0.25);
 }
+.status-badge.offline {
+    background: rgba(255, 71, 87, 0.15);
+    color: #ff4757;
+    border: 1px solid rgba(255, 71, 87, 0.35);
+    box-shadow: 0 0 16px rgba(255, 71, 87, 0.25);
+}
 .status-dot {
     width: 8px; height: 8px;
     border-radius: 50%;
     background: currentColor;
 }
 .status-badge.running .status-dot { animation: pulse-dot 1.5s infinite; }
+.status-badge.offline .status-dot {
+    background: #ff4757;
+    box-shadow: 0 0 8px #ff4757;
+    animation: pulse-dot 1s infinite;
+}
 
 /* ─── Panel Base ─── */
 .panel {

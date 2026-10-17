@@ -17,6 +17,8 @@ let lastWalletUSD          = 0;
 let lastSessionEarningsUSD = 0;
 let lastCurrentRateUSD     = 0;
 let lastTotalPowerWatts    = 0;
+let isMachineOnline        = true;
+let lastMachineStats       = null;
 
 const CURRENCIES = {
     USD: { symbol: '$', rate: 1.0 },
@@ -98,6 +100,13 @@ function connectWS() {
                 fetchDashboardData();
                 fetchStats();
                 fetchErrors();
+            } else if (msg.event === 'machine_status' && msg.data) {
+                isMachineOnline = msg.data.online;
+                applyMachineOnlineStatus({
+                    is_online: msg.data.online,
+                    last_seen_secs: msg.data.last_seen_secs,
+                    machine_name: msg.data.machine
+                });
             }
         } catch (e) {}
     };
@@ -354,6 +363,13 @@ async function fetchStats() {
         if (stats.machine_name) {
             document.getElementById('machine-name-label').textContent = stats.machine_name;
         }
+        if (stats.is_online !== undefined) {
+            isMachineOnline = stats.is_online;
+            lastMachineStats = stats;
+            if (!isMachineOnline) {
+                applyMachineOnlineStatus(stats);
+            }
+        }
     } catch (e) {}
 }
 
@@ -407,7 +423,40 @@ function setBar(valId, barId, pct, label) {
 }
 
 // ─── Status Card ───────────────────────────────────────
+function applyMachineOnlineStatus(status) {
+    const badge = document.getElementById('node-status');
+    const statusText = document.getElementById('status-text');
+    const containerLabel = document.getElementById('active-container-id');
+
+    if (!badge || !statusText) return;
+
+    if (status.is_online === false) {
+        badge.className = 'status-badge offline';
+        statusText.textContent = 'Offline / Crashed';
+        const secs = status.last_seen_secs ?? 0;
+        let timeStr = 'just now';
+        if (secs >= 60) {
+            const mins = Math.floor(secs / 60);
+            timeStr = `${mins}m ago`;
+        } else if (secs > 0) {
+            timeStr = `${secs}s ago`;
+        }
+        if (containerLabel) {
+            containerLabel.textContent = `Last seen ${timeStr}`;
+        }
+        animateValue('current-rate', '--');
+        updateEfficiency(0, lastTotalPowerWatts);
+    }
+}
+
 function updateStatusCard(earnings) {
+    if (!isMachineOnline) {
+        if (lastMachineStats) {
+            applyMachineOnlineStatus(lastMachineStats);
+        }
+        return;
+    }
+
     const badge = document.getElementById('node-status');
     const statusText = document.getElementById('status-text');
     const containerLabel = document.getElementById('active-container-id');
