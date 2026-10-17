@@ -1106,3 +1106,69 @@ html, body {
         font-size: 0.65rem;
     }
 }
+
+/* ─── Bandwidth Summary Bar in Panel Header ─── */
+.panel-header-bw {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.panel-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.bw-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.bw-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.73rem;
+    font-family: 'JetBrains Mono', monospace;
+    transition: var(--transition);
+}
+.bw-stat-pill:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+.bw-stat-label {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.bw-stat-val {
+    color: var(--text-normal);
+    font-weight: 700;
+}
+.bw-stat-val.accent-cyan {
+    color: #22d3ee;
+    text-shadow: 0 0 10px rgba(34, 211, 238, 0.25);
+}
+.bw-stat-val.accent-purple {
+    color: #c084fc;
+    text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+.bw-stat-pill.highlight-all {
+    background: rgba(168, 85, 247, 0.08);
+    border-color: rgba(168, 85, 247, 0.25);
+}
+
+@media (max-width: 768px) {
+    .panel-header-bw {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}

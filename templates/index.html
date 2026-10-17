@@ -15,7 +15,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=4">
 </head>
 <body>
 
@@ -182,6 +182,12 @@
                         <div class="hw-fill fill-purple" id="live-gpu-bar" style="width:0%"></div>
                     </div>
                 </div>
+                <div class="hw-row">
+                    <div class="hw-meta">
+                        <span class="hw-label">Network</span>
+                        <span class="hw-val accent-cyan" id="live-net-val">↓ 0.00 MB/s · ↑ 0.00 MB/s</span>
+                    </div>
+                </div>
             </div>
 
             <!-- ── Live Power Draw ── -->
@@ -231,12 +237,38 @@
             <div class="chart-wrap"><canvas id="containerChart"></canvas></div>
         </div>
 
-        <div class="panel panel-chart">
-            <div class="panel-header">
-                <span class="panel-title">Bandwidth Throughput</span>
-                <span class="panel-sub">MB/s</span>
+        <div class="panel panel-chart panel-bandwidth">
+            <div class="panel-header panel-header-bw">
+                <div class="panel-title-group">
+                    <span class="panel-title">Bandwidth Throughput</span>
+                    <span class="panel-sub" id="bandwidth-panel-sub">MB/s</span>
+                </div>
+                <div class="bw-summary-bar" id="bw-summary-bar">
+                    <div class="bw-stat-pill" title="Bandwidth used in past 24 hours">
+                        <span class="bw-stat-label">24h</span>
+                        <span class="bw-stat-val" id="bw-val-24h">0.00 MB</span>
+                    </div>
+                    <div class="bw-stat-pill" title="Bandwidth used in past 7 days">
+                        <span class="bw-stat-label">Week</span>
+                        <span class="bw-stat-val" id="bw-val-7d">0.00 MB</span>
+                    </div>
+                    <div class="bw-stat-pill" title="Bandwidth used in past 30 days">
+                        <span class="bw-stat-label">1M</span>
+                        <span class="bw-stat-val" id="bw-val-30d">0.00 MB</span>
+                    </div>
+                    <div class="bw-stat-pill" title="Bandwidth used in past 6 months">
+                        <span class="bw-stat-label">6M</span>
+                        <span class="bw-stat-val accent-cyan" id="bw-val-180d">849.03 GB</span>
+                    </div>
+                    <div class="bw-stat-pill highlight-all" title="Total all-time bandwidth used">
+                        <span class="bw-stat-label">All</span>
+                        <span class="bw-stat-val accent-purple" id="bw-val-all">849.03 GB</span>
+                    </div>
+                </div>
             </div>
-            <div class="chart-wrap"><canvas id="bandwidthChart"></canvas></div>
+            <div class="chart-wrap">
+                <canvas id="bandwidthChart"></canvas>
+            </div>
         </div>
 
         <div class="panel panel-chart">
@@ -281,6 +313,6 @@
     <!-- ═══════════════════════ TOAST CONTAINER ═══════════════════════ -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=4"></script>
 </body>
 </html>

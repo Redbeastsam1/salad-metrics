@@ -19,6 +19,7 @@ let lastCurrentRateUSD     = 0;
 let lastTotalPowerWatts    = 0;
 let isMachineOnline        = true;
 let lastMachineStats       = null;
+let lastEarningsData       = null;
 
 const CURRENCIES = {
     USD: { symbol: '$', rate: 1.0 },
@@ -280,7 +281,7 @@ async function fetchDashboardData() {
         }
 
         // ── Bandwidth ──
-        if (data.bandwidth?.length > 0) {
+        if (data.bandwidth && data.bandwidth.length > 0) {
             const bCtx = bandwidthChart.canvas.getContext('2d');
             bandwidthChart.data.datasets = [{
                 label: 'Throughput (MB/s)',
@@ -289,6 +290,9 @@ async function fetchDashboardData() {
                 backgroundColor: makeGradient(bCtx, 'rgba(34,211,238,1)'),
                 fill: true
             }];
+            bandwidthChart.update();
+        } else {
+            bandwidthChart.data.datasets = [];
             bandwidthChart.update();
         }
 
@@ -368,7 +372,23 @@ async function fetchStats() {
             lastMachineStats = stats;
             if (!isMachineOnline) {
                 applyMachineOnlineStatus(stats);
+            } else {
+                updateStatusCard(lastEarningsData);
             }
+        }
+        if (stats.bandwidth_summary) {
+            const b = stats.bandwidth_summary;
+            const el24h  = document.getElementById('bw-val-24h');
+            const el7d   = document.getElementById('bw-val-7d');
+            const el30d  = document.getElementById('bw-val-30d');
+            const el180d = document.getElementById('bw-val-180d');
+            const elAll  = document.getElementById('bw-val-all');
+
+            if (el24h)  el24h.textContent  = b.usage_24h || '0.00 MB';
+            if (el7d)   el7d.textContent   = b.usage_7d || '0.00 MB';
+            if (el30d)  el30d.textContent  = b.usage_30d || '0.00 MB';
+            if (el180d) el180d.textContent = b.usage_180d || '0.00 MB';
+            if (elAll)  elAll.textContent  = b.usage_all || '0.00 MB';
         }
     } catch (e) {}
 }
@@ -414,6 +434,12 @@ async function updateLiveHardware() {
         lastTotalPowerWatts = data.total_power ?? 0;
         updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
 
+        // Live Network Throughput
+        const netEl = document.getElementById('live-net-val');
+        if (netEl && data.net_down_mbps !== undefined) {
+            netEl.textContent = `↓ ${data.net_down_mbps.toFixed(2)} MB/s · ↑ ${data.net_up_mbps.toFixed(2)} MB/s`;
+        }
+
     } catch (e) {}
 }
 
@@ -450,6 +476,12 @@ function applyMachineOnlineStatus(status) {
 }
 
 function updateStatusCard(earnings) {
+    if (earnings) {
+        lastEarningsData = earnings;
+    } else {
+        earnings = lastEarningsData;
+    }
+
     if (!isMachineOnline) {
         if (lastMachineStats) {
             applyMachineOnlineStatus(lastMachineStats);
@@ -462,6 +494,29 @@ function updateStatusCard(earnings) {
     const containerLabel = document.getElementById('active-container-id');
     const rateEl = document.getElementById('current-rate');
 
+    // 1. Authoritative status from backend /api/stats
+    if (lastMachineStats && lastMachineStats.node_status) {
+        if (lastMachineStats.node_status === 'running') {
+            badge.className = 'status-badge running';
+            statusText.textContent = 'Running';
+            const id = lastMachineStats.active_container_id || '';
+            containerLabel.textContent = id.length > 8 ? `${id.substring(0, 8)}...` : (id || 'Active Workload');
+            lastCurrentRateUSD = parseFloat(lastMachineStats.current_rate) || 0;
+            animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+            updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
+            return;
+        } else {
+            badge.className = 'status-badge idle';
+            statusText.textContent = 'Idle';
+            containerLabel.textContent = 'No active container';
+            lastCurrentRateUSD = 0;
+            animateValue('current-rate', '--');
+            updateEfficiency(0, lastTotalPowerWatts);
+            return;
+        }
+    }
+
+    // 2. Fallback to earnings log array
     if (!earnings || earnings.length === 0) {
         badge.className = 'status-badge idle';
         statusText.textContent = 'Idle';
@@ -474,10 +529,9 @@ function updateStatusCard(earnings) {
 
     const latest = earnings[earnings.length - 1];
     const rate   = parseFloat(latest.rate ?? 0);
-    const ts     = new Date(latest.timestamp);
-    const isStale = (Date.now() - ts.getTime()) > 30 * 60 * 1000; // > 30m without log update
+    const isIdle = rate <= 0 || (lastMachineStats && lastMachineStats.uptime === 'Idle');
 
-    if (rate > 0 && !isStale) {
+    if (!isIdle && rate > 0) {
         badge.className = 'status-badge running';
         statusText.textContent = 'Running';
         const id = latest.container_id ?? '';

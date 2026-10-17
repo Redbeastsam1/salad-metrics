@@ -90,6 +90,7 @@ func apiData(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiStats(w http.ResponseWriter, r *http.Request) {
+	workload := database.GetActiveWorkload()
 	uptimeStr, sessionEarnings := database.GetSessionStats()
 	latestWallet := database.GetLatestWallet()
 	var walletBal float64
@@ -99,14 +100,23 @@ func apiStats(w http.ResponseWriter, r *http.Request) {
 
 	machineState := hubPkg.GetMachineStatus(cfg.MachineName)
 
+	nodeStatus := workload.Status
+	if !machineState.IsOnline {
+		nodeStatus = "offline"
+	}
+
 	writeJSON(w, map[string]any{
-		"uptime":           uptimeStr,
-		"session_earnings": sessionEarnings,
-		"wallet_balance":   walletBal,
-		"machine_name":     cfg.MachineName,
-		"is_online":        machineState.IsOnline,
-		"last_seen_secs":   machineState.LastSeenSecs,
-		"mode":             cfg.Mode,
+		"uptime":              uptimeStr,
+		"session_earnings":    sessionEarnings,
+		"wallet_balance":      walletBal,
+		"machine_name":        cfg.MachineName,
+		"is_online":           machineState.IsOnline,
+		"last_seen_secs":      machineState.LastSeenSecs,
+		"mode":                cfg.Mode,
+		"node_status":         nodeStatus,
+		"current_rate":        workload.Rate,
+		"active_container_id": workload.ContainerID,
+		"bandwidth_summary":   database.GetBandwidthSummary(),
 	})
 }
 

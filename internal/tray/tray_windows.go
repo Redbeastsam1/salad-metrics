@@ -152,7 +152,7 @@ func wndProc(hwnd windows.HWND, msg uint32, wParam uintptr, lParam uintptr) uint
 			return 0
 
 		case WM_LBUTTONDBLCLK, WM_LBUTTONUP:
-			openBrowser(appPort)
+			OpenBrowser(appPort)
 			return 0
 		}
 
@@ -160,7 +160,7 @@ func wndProc(hwnd windows.HWND, msg uint32, wParam uintptr, lParam uintptr) uint
 		cmdID := int(wParam & 0xffff)
 		switch cmdID {
 		case IDM_OPEN:
-			openBrowser(appPort)
+			OpenBrowser(appPort)
 		case IDM_TOGGLE_CONSOLE:
 			toggleConsole()
 		case IDM_QUIT:
@@ -179,7 +179,8 @@ func wndProc(hwnd windows.HWND, msg uint32, wParam uintptr, lParam uintptr) uint
 	return ret
 }
 
-func openBrowser(port int) {
+// OpenBrowser opens the dashboard in the user's default web browser.
+func OpenBrowser(port int) {
 	url := fmt.Sprintf("http://localhost:%d", port)
 	exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 }

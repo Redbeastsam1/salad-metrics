@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"salad-metrics/internal/agent"
@@ -19,6 +21,19 @@ import (
 func main() {
 	// 1. Parse CLI config & environment variables
 	cfg := config.Parse()
+
+	// In standalone mode, if an existing instance of Salad Metrics is already running on this port,
+	// simply open the dashboard in the default browser and exit cleanly.
+	if cfg.Mode == "standalone" {
+		client := &http.Client{Timeout: 800 * time.Millisecond}
+		if resp, err := client.Get(fmt.Sprintf("http://localhost:%d/api/stats", cfg.Port)); err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			log.Printf("[main] Salad Metrics is already running on port %d. Opening dashboard in browser...", cfg.Port)
+			tray.OpenBrowser(cfg.Port)
+			time.Sleep(500 * time.Millisecond)
+			return
+		}
+	}
 
 	log.Printf("=================================================")
 	log.Printf("  🥗 Salad Metrics (Go Edition)")
@@ -71,6 +86,14 @@ func main() {
 	if cfg.TrayEnabled {
 		tray.Start(cfg.Port, cfg.MachineName, cfg.HideConsole)
 		defer tray.Remove()
+	}
+
+	// In standalone mode, automatically open the dashboard in default browser on launch
+	if cfg.Mode == "standalone" {
+		go func() {
+			time.Sleep(600 * time.Millisecond)
+			tray.OpenBrowser(cfg.Port)
+		}()
 	}
 
 	// 6. Start HTTP server (blocks main goroutine)

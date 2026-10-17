@@ -21,8 +21,13 @@ if exist .env (
     )
 )
 
+REM Strip surrounding quotes from variables
+if defined SERVER_URL set "SERVER_URL=%SERVER_URL:"=%"
+if defined MACHINE_NAME set "MACHINE_NAME=%MACHINE_NAME:"=%"
+if defined DISCORD_BOT_TOKEN set "DISCORD_BOT_TOKEN=%DISCORD_BOT_TOKEN:"=%"
+
 echo [INFO] Building salad-metrics.exe...
-go build -o salad-metrics.exe .
+go build -ldflags "-s -w" -o salad-metrics.exe .
 
 if not "%SERVER_URL%"=="" (
     echo [INFO] Running in Agent mode -> %SERVER_URL%

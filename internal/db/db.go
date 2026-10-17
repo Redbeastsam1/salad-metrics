@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -13,7 +14,10 @@ import (
 
 // DB wraps a sql.DB connection pool for all Salad metrics data.
 type DB struct {
-	pool *sql.DB
+	pool      *sql.DB
+	bwMu      sync.RWMutex
+	bwCached  *BandwidthSummary
+	bwCacheTs time.Time
 }
 
 // New opens the SQLite database, enables WAL mode, and creates all tables/indexes.
@@ -33,6 +37,14 @@ func New(path string) (*DB, error) {
 		return nil, fmt.Errorf("init db: %w", err)
 	}
 	return db, nil
+}
+
+// Close closes the underlying database pool.
+func (db *DB) Close() error {
+	if db.pool != nil {
+		return db.pool.Close()
+	}
+	return nil
 }
 
 func (db *DB) initialize() error {
@@ -167,6 +179,10 @@ func (db *DB) InsertBandwidth(rows []BandwidthRow) {
 		stmt.Exec(r.Timestamp, r.Throughput)
 	}
 	tx.Commit()
+
+	db.bwMu.Lock()
+	db.bwCached = nil
+	db.bwMu.Unlock()
 }
 
 func (db *DB) InsertErrors(rows []ErrorRow) {
@@ -226,9 +242,31 @@ func (db *DB) GetData(hours int) DashboardData {
 		timeLimit = time.Now().Add(-time.Duration(hours) * time.Hour).Format("2006-01-02 15:04:05")
 	}
 
+	earningsRows := db.queryRows("earnings", []string{"timestamp", "container_id", "rate"}, timeLimit)
+
+	// If currently running a container that started before timeLimit, ensure it is included so charts and history see it
+	workload := db.GetActiveWorkload()
+	if workload.Status == "running" && workload.ContainerID != "" {
+		found := false
+		for _, r := range earningsRows {
+			if r["container_id"] == workload.ContainerID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			activeRow := map[string]any{
+				"timestamp":    workload.StartedAt,
+				"container_id": workload.ContainerID,
+				"rate":         workload.Rate,
+			}
+			earningsRows = append([]map[string]any{activeRow}, earningsRows...)
+		}
+	}
+
 	return DashboardData{
 		Wallet:    db.queryRows("wallet", []string{"timestamp", "current"}, timeLimit),
-		Earnings:  db.queryRows("earnings", []string{"timestamp", "container_id", "rate"}, timeLimit),
+		Earnings:  earningsRows,
 		Bandwidth: db.queryRows("bandwidth", []string{"timestamp", "throughput"}, timeLimit),
 		Power:     db.queryRows("power", []string{"timestamp", "gpu_power", "cpu_power", "total_power"}, timeLimit),
 	}
@@ -292,43 +330,72 @@ func ParseTimestamp(ts string) (time.Time, error) {
 		time.RFC3339,
 	}
 	for _, f := range formats {
-		if t, err := time.Parse(f, ts); err == nil {
+		if t, err := time.ParseInLocation(f, ts, time.Local); err == nil {
 			return t, nil
 		}
 	}
 	return time.Time{}, fmt.Errorf("cannot parse timestamp: %q", ts)
 }
 
-// GetSessionStats calculates active workload session uptime and earnings dynamically from log history.
-func (db *DB) GetSessionStats() (string, float64) {
-	// 1. Get latest earnings row to see if node is running or idle
+// ActiveWorkload holds information about the currently running container.
+type ActiveWorkload struct {
+	Status      string  `json:"status"` // "running" or "idle"
+	ContainerID string  `json:"container_id"`
+	Rate        float64 `json:"rate"`
+	StartedAt   string  `json:"started_at"`
+}
+
+// GetActiveWorkload determines if a container workload is actively running on this node.
+func (db *DB) GetActiveWorkload() ActiveWorkload {
 	var latestTs, latestCont string
 	var latestRate float64
 	err := db.pool.QueryRow(`SELECT timestamp, container_id, rate FROM earnings ORDER BY timestamp DESC LIMIT 1`).
 		Scan(&latestTs, &latestCont, &latestRate)
-	if err != nil {
-		return "0h 0m", 0.0
+	if err != nil || latestRate <= 0 {
+		return ActiveWorkload{Status: "idle"}
 	}
 
-	// If latest rate is 0 or report is stale (> 30m without logs), node is idle
-	if latestRate <= 0 {
-		return "Idle", 0.0
+	// Check if Salad is actively logging: Salad writes wallet balance every 1-5 minutes while active.
+	// Only mark Idle if wallet has had no updates for > 30 minutes (e.g. app closed, machine off).
+	var latestWalletTs string
+	var latestWalletVal float64
+	wErr := db.pool.QueryRow(`SELECT timestamp, current FROM wallet ORDER BY timestamp DESC LIMIT 1`).
+		Scan(&latestWalletTs, &latestWalletVal)
+	if wErr == nil {
+		if wTime, err := ParseTimestamp(latestWalletTs); err == nil {
+			if time.Since(wTime) > 30*time.Minute {
+				return ActiveWorkload{Status: "idle"}
+			}
+		}
+	} else {
+		if latestTime, err := ParseTimestamp(latestTs); err == nil && time.Since(latestTime) > 30*time.Minute {
+			return ActiveWorkload{Status: "idle"}
+		}
 	}
-	latestTime, err := ParseTimestamp(latestTs)
-	if err == nil && time.Since(latestTime) > 30*time.Minute {
+
+	return ActiveWorkload{
+		Status:      "running",
+		ContainerID: latestCont,
+		Rate:        latestRate,
+		StartedAt:   latestTs,
+	}
+}
+
+// GetSessionStats calculates active workload session uptime and earnings dynamically from log history.
+func (db *DB) GetSessionStats() (string, float64) {
+	workload := db.GetActiveWorkload()
+	if workload.Status != "running" {
 		return "Idle", 0.0
 	}
 
-	// 2. Query earnings rows in reverse order to find where the current active session started
+	// Query earnings rows in reverse order to find where the current active session started
 	rows, err := db.pool.Query(`SELECT timestamp, rate FROM earnings ORDER BY timestamp DESC LIMIT 1000`)
 	if err != nil {
 		return "0h 0m", 0.0
 	}
 	defer rows.Close()
 
-	sessionStartTs := latestTs
-	var prevTime time.Time
-
+	sessionStartTs := workload.StartedAt
 	for rows.Next() {
 		var ts string
 		var rate float64
@@ -337,14 +404,6 @@ func (db *DB) GetSessionStats() (string, float64) {
 		}
 		if rate <= 0 {
 			break
-		}
-		t, err := ParseTimestamp(ts)
-		if err == nil {
-			// If gap between consecutive reports is > 45 minutes, it was an earlier session
-			if !prevTime.IsZero() && prevTime.Sub(t) > 45*time.Minute {
-				break
-			}
-			prevTime = t
 		}
 		sessionStartTs = ts
 	}
@@ -404,6 +463,123 @@ func (db *DB) GetSessionStats() (string, float64) {
 	}
 
 	return uptimeStr, sessionEarnings
+}
+
+// BandwidthSummary holds total data transferred across standard time windows.
+type BandwidthSummary struct {
+	Usage24h  string  `json:"usage_24h"`
+	Usage7d   string  `json:"usage_7d"`
+	Usage30d  string  `json:"usage_30d"`
+	Usage180d string  `json:"usage_180d"`
+	UsageAll  string  `json:"usage_all"`
+	Bytes24h  float64 `json:"bytes_24h_mb"`
+	Bytes7d   float64 `json:"bytes_7d_mb"`
+	Bytes30d  float64 `json:"bytes_30d_mb"`
+	Bytes180d float64 `json:"bytes_180d_mb"`
+	BytesAll  float64 `json:"bytes_all_mb"`
+}
+
+func formatMB(mb float64) string {
+	if mb <= 0 {
+		return "0.00 MB"
+	}
+	if mb >= 1024*1024 {
+		return fmt.Sprintf("%.2f TB", mb/(1024*1024))
+	}
+	if mb >= 1024 {
+		return fmt.Sprintf("%.2f GB", mb/1024)
+	}
+	return fmt.Sprintf("%.2f MB", mb)
+}
+
+// GetBandwidthSummary calculates total bandwidth transferred in 24h, 1w, 1m, 6m, and all time.
+func (db *DB) GetBandwidthSummary() BandwidthSummary {
+	db.bwMu.RLock()
+	if db.bwCached != nil && time.Since(db.bwCacheTs) < 15*time.Second {
+		cached := *db.bwCached
+		db.bwMu.RUnlock()
+		return cached
+	}
+	db.bwMu.RUnlock()
+
+	db.bwMu.Lock()
+	defer db.bwMu.Unlock()
+
+	if db.bwCached != nil && time.Since(db.bwCacheTs) < 15*time.Second {
+		return *db.bwCached
+	}
+
+	now := time.Now()
+	t24h := now.Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
+	t7d := now.Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	t30d := now.Add(-30 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	t180d := now.Add(-180 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+
+	rows, err := db.pool.Query(`SELECT timestamp, throughput FROM bandwidth ORDER BY timestamp ASC`)
+	if err != nil {
+		return BandwidthSummary{
+			Usage24h:  "0.00 MB",
+			Usage7d:   "0.00 MB",
+			Usage30d:  "0.00 MB",
+			Usage180d: "0.00 MB",
+			UsageAll:  "0.00 MB",
+		}
+	}
+	defer rows.Close()
+
+	var mb24h, mb7d, mb30d, mb180d, mbAll float64
+	var prevTime time.Time
+
+	for rows.Next() {
+		var ts string
+		var tp float64
+		if err := rows.Scan(&ts, &tp); err != nil {
+			break
+		}
+		t, err := ParseTimestamp(ts)
+		dt := 30.0
+		if err == nil && !prevTime.IsZero() {
+			diff := t.Sub(prevTime).Seconds()
+			if diff > 0 && diff <= 120 {
+				dt = diff
+			}
+		}
+		if err == nil {
+			prevTime = t
+		}
+
+		segmentMB := tp * dt
+		mbAll += segmentMB
+		if ts >= t180d {
+			mb180d += segmentMB
+		}
+		if ts >= t30d {
+			mb30d += segmentMB
+		}
+		if ts >= t7d {
+			mb7d += segmentMB
+		}
+		if ts >= t24h {
+			mb24h += segmentMB
+		}
+	}
+
+	sum := BandwidthSummary{
+		Usage24h:  formatMB(mb24h),
+		Usage7d:   formatMB(mb7d),
+		Usage30d:  formatMB(mb30d),
+		Usage180d: formatMB(mb180d),
+		UsageAll:  formatMB(mbAll),
+		Bytes24h:  mb24h,
+		Bytes7d:   mb7d,
+		Bytes30d:  mb30d,
+		Bytes180d: mb180d,
+		BytesAll:  mbAll,
+	}
+
+	db.bwCached = &sum
+	db.bwCacheTs = now
+	return sum
 }
 
 // GetActiveErrors returns all non-dismissed error rows, newest first.
