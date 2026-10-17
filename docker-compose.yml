@@ -1,0 +1,16 @@
+services:
+  salad-metrics-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: salad-metrics-hub
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Stores salad_metrics.db persistently on Ubuntu
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Kolkata

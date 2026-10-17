@@ -1,6 +1,8 @@
 # Binaries
 *.exe
 salad-metrics.exe
+salad-metrics-linux
+salad-metrics
 
 # Local SQLite Databases
 *.db

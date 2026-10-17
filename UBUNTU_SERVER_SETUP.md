@@ -51,68 +51,61 @@ graph TD
 
 ---
 
-## 🛠️ Step 1: Cross-Compile the Linux Binary (from Windows)
+## 🐳 Deployment Method 1: Docker Compose (Recommended)
 
-Go makes cross-compilation effortless. You can compile a native 64-bit Linux binary directly from your Windows PowerShell:
+Docker Compose is the fastest and cleanest way to run the Hub on your Ubuntu server. It requires zero compilation on Windows, handles persistent storage in `./data/`, starts automatically on boot, and keeps the environment isolated.
 
+### 1. Copy Project Files to Ubuntu Server
+From your Windows PowerShell:
 ```powershell
-# Open PowerShell in the salad-metrics project folder
-cd "e:\Devlopment Project\salad-metrics"
+# Create folder on Ubuntu server (replace 192.168.1.100 with your Ubuntu server IP)
+ssh user@192.168.1.100 "mkdir -p ~/salad-metrics"
 
-# Set target OS and architecture to Linux AMD64
-$env:GOOS="linux"
-$env:GOARCH="amd64"
-
-# Build the Linux executable
-go build -o salad-metrics-linux .
-
-# Reset environment variables back to default
-$env:GOOS=""
-$env:GOARCH=""
+# Copy project files needed for Docker
+scp -r Dockerfile docker-compose.yml .dockerignore go.mod go.sum main.go internal templates static .env user@192.168.1.100:~/salad-metrics/
 ```
 
-This generates `salad-metrics-linux` (a standalone ELF binary with zero external dependencies).
-
----
-
-## 🚀 Step 2: Deploy to Ubuntu Server
-
-### 1. Copy Files to Ubuntu
-Copy the binary and frontend assets to your Ubuntu Server using `scp` or SFTP:
-
-```bash
-# From Windows PowerShell (replace 192.168.1.100 with your Ubuntu server IP):
-scp salad-metrics-linux user@192.168.1.100:~/salad-metrics/
-scp -r static templates .env user@192.168.1.100:~/salad-metrics/
-```
-
-### 2. Make Binary Executable
+### 2. Start the Container on Ubuntu
 SSH into your Ubuntu server:
 ```bash
 ssh user@192.168.1.100
 cd ~/salad-metrics
-chmod +x salad-metrics-linux
+
+# Start the Hub in the background (builds the image automatically)
+docker compose up -d --build
 ```
 
-### 3. Configure UFW Firewall (if active)
+### 3. Check Logs & Status
 ```bash
-sudo ufw allow 8000/tcp
+# View live container logs
+docker compose logs -f
+
+# Check container status
+docker compose ps
 ```
+
+The dashboard is now live 24/7 at **`http://<ubuntu-server-ip>:8000`**!
+The SQLite database will be saved persistently on Ubuntu in `~/salad-metrics/data/salad_metrics.db`.
 
 ---
 
-## ⚙️ Step 3: Run as a 24/7 Systemd Service
+## ⚙️ Deployment Method 2: Native Binary & Systemd (Alternative)
 
-To ensure Salad Metrics starts on boot and restarts automatically if it ever crashes:
+If you prefer running a direct native Linux binary without Docker:
 
-Create `/etc/systemd/system/salad-metrics.service`:
-
-```bash
-sudo nano /etc/systemd/system/salad-metrics.service
+### 1. Cross-Compile the Linux Binary (from Windows)
+```cmd
+cmd /c "set GOOS=linux&& set GOARCH=amd64&& go build -o salad-metrics-linux ."
 ```
 
-Paste the following configuration:
+### 2. Copy to Ubuntu
+```bash
+scp salad-metrics-linux user@192.168.1.100:~/salad-metrics/
+scp -r static templates .env user@192.168.1.100:~/salad-metrics/
+```
 
+### 3. Configure Systemd Service
+Create `/etc/systemd/system/salad-metrics.service`:
 ```ini
 [Unit]
 Description=Salad Metrics Dashboard Hub
@@ -131,13 +124,11 @@ EnvironmentFile=/home/user/salad-metrics/.env
 WantedBy=multi-user.target
 ```
 
-Enable and start the service:
+Enable and start:
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now salad-metrics
 ```
-
-Check status:
 ```bash
 sudo systemctl status salad-metrics
 ```

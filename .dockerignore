@@ -1,0 +1,9 @@
+.git
+*.exe
+*.log
+salad-metrics-linux
+salad_metrics.db*
+venv/
+__pycache__/
+scratch/
+docs/
