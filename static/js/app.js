@@ -53,7 +53,11 @@ async function fetchExchangeRates() {
 function refreshCurrencyDisplays() {
     animateValue('wallet-balance-text', formatCurrency(lastWalletUSD));
     animateValue('session-earnings', formatCurrency(lastSessionEarningsUSD, 4, '+'));
-    animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+    if (lastCurrentRateUSD > 0) {
+        animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+    } else {
+        animateValue('current-rate', '--');
+    }
     updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
     fetchDashboardData();
 }
@@ -414,27 +418,32 @@ function updateStatusCard(earnings) {
         statusText.textContent = 'Idle';
         containerLabel.textContent = 'No active container';
         lastCurrentRateUSD = 0;
-        rateEl.textContent = formatCurrency(0);
+        rateEl.textContent = '--';
         updateEfficiency(0, lastTotalPowerWatts);
         return;
     }
 
     const latest = earnings[earnings.length - 1];
     const rate   = parseFloat(latest.rate ?? 0);
+    const ts     = new Date(latest.timestamp);
+    const isStale = (Date.now() - ts.getTime()) > 30 * 60 * 1000; // > 30m without log update
 
-    if (rate > 0) {
+    if (rate > 0 && !isStale) {
         badge.className = 'status-badge running';
         statusText.textContent = 'Running';
+        const id = latest.container_id ?? '';
+        containerLabel.textContent = id.length > 8 ? `${id.substring(0, 8)}...` : id;
+        lastCurrentRateUSD = rate;
+        animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
+        updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
     } else {
         badge.className = 'status-badge idle';
         statusText.textContent = 'Idle';
+        containerLabel.textContent = 'No active container';
+        lastCurrentRateUSD = 0;
+        animateValue('current-rate', '--');
+        updateEfficiency(0, lastTotalPowerWatts);
     }
-
-    const id = latest.container_id ?? '';
-    containerLabel.textContent = id.length > 8 ? `${id.substring(0, 8)}...` : id;
-    lastCurrentRateUSD = rate;
-    animateValue('current-rate', formatCurrency(lastCurrentRateUSD));
-    updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
 }
 
 // ─── Container History ─────────────────────────────────

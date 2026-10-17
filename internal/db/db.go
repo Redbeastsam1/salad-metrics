@@ -310,8 +310,12 @@ func (db *DB) GetSessionStats() (string, float64) {
 		return "0h 0m", 0.0
 	}
 
-	// If latest rate is 0, node is idle
+	// If latest rate is 0 or report is stale (> 30m without logs), node is idle
 	if latestRate <= 0 {
+		return "Idle", 0.0
+	}
+	latestTime, err := ParseTimestamp(latestTs)
+	if err == nil && time.Since(latestTime) > 30*time.Minute {
 		return "Idle", 0.0
 	}
 

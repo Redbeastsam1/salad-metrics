@@ -16,11 +16,12 @@ import (
 
 // Pre-compiled regex patterns — compiled once at program start.
 var (
-	earningsRe  = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Predicted Earnings Report: ([\d.]+) from \(([^)]+)\)`)
-	walletRe    = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Wallet: Current\(([\d.]+)\)`)
-	bandwidthRe = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] \{.*?"BidirThroughput":([\d.]+)`)
-	errorRe     = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[(WRN|ERR)\] (.*)`)
-	sysInfoRe   = regexp.MustCompile(`\[INF\] StaticData: (\{.*\})`)
+	earningsRe     = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Predicted Earnings Report: ([\d.]+) from \(([^)]+)\)`)
+	runningStateRe = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Running State: false`)
+	walletRe       = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] Wallet: Current\(([\d.]+)\)`)
+	bandwidthRe    = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[INF\] \{.*?"BidirThroughput":([\d.]+)`)
+	errorRe        = regexp.MustCompile(`(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[(WRN|ERR)\] (.*)`)
+	sysInfoRe      = regexp.MustCompile(`\[INF\] StaticData: (\{.*\})`)
 )
 
 // ParsedData holds everything extracted from a single parse pass of a file.
@@ -129,6 +130,15 @@ func ParseFile(path string, isBandwidth bool) (ParsedData, bool) {
 			Timestamp:   m[1],
 			Rate:        rate,
 			ContainerID: m[3],
+		})
+	}
+
+	// --- Running State: false (Workload stopped or paused) ---
+	for _, m := range runningStateRe.FindAllStringSubmatch(text, -1) {
+		result.Earnings = append(result.Earnings, db.EarningsRow{
+			Timestamp:   m[1],
+			Rate:        0.0,
+			ContainerID: "",
 		})
 	}
 
