@@ -54,6 +54,9 @@ func Parse() *Config {
 	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if cfg.ServerURL != "" {
 		cfg.ServerURL = strings.TrimRight(cfg.ServerURL, "/")
+		if cfg.Mode == "standalone" {
+			cfg.Mode = "agent"
+		}
 	}
 
 	return cfg
