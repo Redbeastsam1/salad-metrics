@@ -14,7 +14,11 @@ import (
 // IngestPayload is the telemetry and log payload sent by an Agent to the Hub server.
 type IngestPayload struct {
 	MachineName string            `json:"machine_name"`
+	Machine     string            `json:"machine,omitempty"`
 	Timestamp   string            `json:"timestamp"`
+	Status      string            `json:"status,omitempty"`
+	CurrentRate float64           `json:"current_rate,omitempty"`
+	ContainerID string            `json:"container_id,omitempty"`
 	Hardware    *hardware.Stats   `json:"hardware,omitempty"`
 	SystemInfo  *parser.SysInfo   `json:"system_info,omitempty"`
 	Wallet      []db.WalletRow    `json:"wallet,omitempty"`
@@ -24,12 +28,19 @@ type IngestPayload struct {
 	Power       []db.PowerRow     `json:"power,omitempty"`
 }
 
-// MachineState tracks the online/offline state of an Agent machine.
+// MachineState tracks the online/offline state and telemetry of an Agent machine.
 type MachineState struct {
-	Name         string    `json:"name"`
-	LastSeen     time.Time `json:"last_seen"`
-	IsOnline     bool      `json:"is_online"`
-	LastSeenSecs int64     `json:"last_seen_secs"`
+	Name         string            `json:"name"`
+	LastSeen     time.Time         `json:"last_seen"`
+	IsOnline     bool              `json:"is_online"`
+	LastSeenSecs int64             `json:"last_seen_secs"`
+	Hardware     *hardware.Stats   `json:"hardware,omitempty"`
+	SystemInfo   *parser.SysInfo   `json:"system_info,omitempty"`
+	Status       string            `json:"status"` // "running", "idle", "offline"
+	Rate         float64           `json:"current_rate"`
+	ContainerID  string            `json:"container_id"`
+	Uptime       string            `json:"uptime"`
+	SessionEarn  float64           `json:"session_earnings"`
 }
 
 var (
@@ -47,7 +58,13 @@ func RegisterAlertCallback(fn func(machine string, online bool, dur time.Duratio
 
 // ProcessIngest handles an incoming telemetry/log packet from an Agent.
 func ProcessIngest(database *db.DB, wsHub *ws.Hub, p *IngestPayload) {
-	if p == nil || p.MachineName == "" {
+	if p == nil {
+		return
+	}
+	if p.MachineName == "" && p.Machine != "" {
+		p.MachineName = p.Machine
+	}
+	if p.MachineName == "" {
 		return
 	}
 
@@ -66,6 +83,21 @@ func ProcessIngest(database *db.DB, wsHub *ws.Hub, p *IngestPayload) {
 	wasOnline := state.IsOnline
 	state.LastSeen = time.Now()
 	state.IsOnline = true
+	if p.Hardware != nil {
+		state.Hardware = p.Hardware
+	}
+	if p.SystemInfo != nil {
+		state.SystemInfo = p.SystemInfo
+	}
+	if p.Status != "" {
+		state.Status = p.Status
+	}
+	if p.CurrentRate > 0 {
+		state.Rate = p.CurrentRate
+	}
+	if p.ContainerID != "" {
+		state.ContainerID = p.ContainerID
+	}
 	fn := alertFunc
 	mu.Unlock()
 
@@ -82,7 +114,7 @@ func ProcessIngest(database *db.DB, wsHub *ws.Hub, p *IngestPayload) {
 		}
 	}
 
-	// Cache hardware and system info
+	// Cache hardware and system info as global fallback
 	if p.Hardware != nil {
 		hardware.SetCached(p.Hardware)
 	}
@@ -90,26 +122,26 @@ func ProcessIngest(database *db.DB, wsHub *ws.Hub, p *IngestPayload) {
 		parser.SetCachedSystemInfo(*p.SystemInfo)
 	}
 
-	// Ingest database records
+	// Ingest database records with machine affiliation
 	hasNewData := false
 	if len(p.Wallet) > 0 {
-		database.InsertWallet(p.Wallet)
+		database.InsertWalletWithMachine(p.MachineName, p.Wallet)
 		hasNewData = true
 	}
 	if len(p.Earnings) > 0 {
-		database.InsertEarnings(p.Earnings)
+		database.InsertEarningsWithMachine(p.MachineName, p.Earnings)
 		hasNewData = true
 	}
 	if len(p.Bandwidth) > 0 {
-		database.InsertBandwidth(p.Bandwidth)
+		database.InsertBandwidthWithMachine(p.MachineName, p.Bandwidth)
 		hasNewData = true
 	}
 	if len(p.Errors) > 0 {
-		database.InsertErrors(p.Errors)
+		database.InsertErrorsWithMachine(p.MachineName, p.Errors)
 		hasNewData = true
 	}
 	if len(p.Power) > 0 {
-		database.InsertPower(p.Power)
+		database.InsertPowerWithMachine(p.MachineName, p.Power)
 		hasNewData = true
 	}
 
@@ -174,4 +206,88 @@ func GetMachineStatus(name string) MachineState {
 		LastSeen:     time.Now(),
 		LastSeenSecs: 0,
 	}
+}
+
+// GetMachineHardware returns the latest cached hardware stats for a specific machine.
+func GetMachineHardware(name string) *hardware.Stats {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if state, exists := machines[name]; exists && state.Hardware != nil {
+		return state.Hardware
+	}
+	hw := hardware.Get()
+	return &hw
+}
+
+// GetMachineSysInfo returns the latest cached system info for a specific machine.
+func GetMachineSysInfo(name string) *parser.SysInfo {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	if state, exists := machines[name]; exists && state.SystemInfo != nil {
+		return state.SystemInfo
+	}
+	return parser.GetCachedSystemInfo()
+}
+
+// GetAllMachines returns all currently known agent machines and their live status.
+func GetAllMachines(database *db.DB) []MachineState {
+	mu.RLock()
+	defer mu.RUnlock()
+
+	nameSet := make(map[string]bool)
+	for name := range machines {
+		nameSet[name] = true
+	}
+	if database != nil {
+		for _, dbName := range database.GetKnownMachines() {
+			nameSet[dbName] = true
+		}
+	}
+
+	var result []MachineState
+	now := time.Now()
+	for name := range nameSet {
+		state, exists := machines[name]
+		var st MachineState
+		if exists {
+			st = *state
+			st.LastSeenSecs = int64(now.Sub(state.LastSeen).Seconds())
+		} else {
+			st = MachineState{
+				Name:         name,
+				IsOnline:     false,
+				LastSeenSecs: 999999,
+			}
+		}
+
+		if database != nil {
+			workload := database.GetActiveWorkload(name)
+			uptime, sessEarn := database.GetSessionStats(name)
+			if workload.Rate > 0 || st.Rate == 0 {
+				st.Rate = workload.Rate
+			}
+			if workload.ContainerID != "" || st.ContainerID == "" {
+				st.ContainerID = workload.ContainerID
+			}
+			if uptime != "" && uptime != "Idle" {
+				st.Uptime = uptime
+			} else if st.Uptime == "" {
+				st.Uptime = uptime
+			}
+			if sessEarn > 0 || st.SessionEarn == 0 {
+				st.SessionEarn = sessEarn
+			}
+			if !st.IsOnline {
+				st.Status = "offline"
+			} else if workload.Status != "" && workload.Status != "idle" {
+				st.Status = workload.Status
+			} else if st.Status == "" {
+				st.Status = workload.Status
+			}
+		}
+		result = append(result, st)
+	}
+	return result
 }

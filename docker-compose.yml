@@ -8,9 +8,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Stores salad_metrics.db persistently on Ubuntu
+      # Stores salad_metrics.db persistently on Linux host
       - ./data:/app/data
-    env_file:
-      - .env
     environment:
+      - SALAD_MODE=server
+      - SALAD_DB_FILE=/app/data/salad_metrics.db
       - TZ=Asia/Kolkata
+    env_file:
+      - path: .env
+        required: false

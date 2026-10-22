@@ -17,7 +17,12 @@ import (
 // Run starts the fsnotify-based file watcher. It blocks forever.
 // When a log file is written to, it parses only the new bytes and
 // immediately pushes a WebSocket event to all connected browsers.
-func Run(logDir string, database *db.DB, hub *ws.Hub) {
+func Run(logDir string, database *db.DB, hub *ws.Hub, machineName ...string) {
+	mach := "Beast"
+	if len(machineName) > 0 && machineName[0] != "" {
+		mach = machineName[0]
+	}
+
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatalf("[watcher] Failed to create fsnotify watcher: %v", err)
@@ -26,7 +31,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 
 	// Do an initial full parse of existing files on startup
 	log.Println("[watcher] Running initial log parse...")
-	scanAndParse(logDir, database, hub, true)
+	scanAndParse(logDir, database, hub, mach, true)
 	log.Println("[watcher] Initial parse complete. Watching for changes...")
 
 	// Watch the root log dir and all existing subdirectories
@@ -40,7 +45,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 		select {
 		case <-pollTicker.C:
 			// Periodic poll scan — fast since Stat() skips unchanged files
-			scanAndParse(logDir, database, hub, false)
+			scanAndParse(logDir, database, hub, mach, false)
 
 		case event, ok := <-watcher.Events:
 			if !ok {
@@ -50,7 +55,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 			switch {
 			case event.Has(fsnotify.Write):
 				// A file was written to — parse only the new bytes
-				handleFileChange(event.Name, database, hub)
+				handleFileChange(event.Name, database, hub, mach)
 
 			case event.Has(fsnotify.Create):
 				// A new file or directory was created
@@ -61,7 +66,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 				} else {
 					// New file — parse it (offset starts at 0)
 					parser.ResetOffset(event.Name)
-					handleFileChange(event.Name, database, hub)
+					handleFileChange(event.Name, database, hub, mach)
 				}
 			}
 
@@ -75,7 +80,7 @@ func Run(logDir string, database *db.DB, hub *ws.Hub) {
 }
 
 // handleFileChange processes a single file change event.
-func handleFileChange(path string, database *db.DB, hub *ws.Hub) {
+func handleFileChange(path string, database *db.DB, hub *ws.Hub, machine string) {
 	if !isLogFile(path) {
 		return
 	}
@@ -86,22 +91,22 @@ func handleFileChange(path string, database *db.DB, hub *ws.Hub) {
 		return
 	}
 
-	// Write to DB
-	database.InsertWallet(data.Wallet)
-	database.InsertEarnings(data.Earnings)
-	database.InsertBandwidth(data.Bandwidth)
-	database.InsertErrors(data.Errors)
+	// Write to DB with machine affiliation
+	database.InsertWalletWithMachine(machine, data.Wallet)
+	database.InsertEarningsWithMachine(machine, data.Earnings)
+	database.InsertBandwidthWithMachine(machine, data.Bandwidth)
+	database.InsertErrorsWithMachine(machine, data.Errors)
 
 	// Push WebSocket event to all browsers — instant UI refresh
-	hub.Broadcast("data_updated", map[string]any{"message": "New data available"})
-	log.Printf("[watcher] Processed %s: W=%d E=%d BW=%d ERR=%d",
-		filepath.Base(path),
+	hub.Broadcast("data_updated", map[string]any{"message": "New data available", "machine": machine})
+	log.Printf("[watcher] Processed %s (%s): W=%d E=%d BW=%d ERR=%d",
+		filepath.Base(path), machine,
 		len(data.Wallet), len(data.Earnings), len(data.Bandwidth), len(data.Errors))
 }
 
 // scanAndParse does the initial startup parse of all existing log files,
 // and acts as the periodic fallback sweep.
-func scanAndParse(logDir string, database *db.DB, hub *ws.Hub, silent bool) {
+func scanAndParse(logDir string, database *db.DB, hub *ws.Hub, machine string, silent bool) {
 	anyNewData := false
 	_ = filepath.Walk(logDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
@@ -113,20 +118,20 @@ func scanAndParse(logDir string, database *db.DB, hub *ws.Hub, silent bool) {
 		isBandwidth := strings.Contains(filepath.Dir(path), "Bandwidth-SGS-")
 		data, hasData := parser.ParseFile(path, isBandwidth)
 		if hasData {
-			database.InsertWallet(data.Wallet)
-			database.InsertEarnings(data.Earnings)
-			database.InsertBandwidth(data.Bandwidth)
-			database.InsertErrors(data.Errors)
+			database.InsertWalletWithMachine(machine, data.Wallet)
+			database.InsertEarningsWithMachine(machine, data.Earnings)
+			database.InsertBandwidthWithMachine(machine, data.Bandwidth)
+			database.InsertErrorsWithMachine(machine, data.Errors)
 			anyNewData = true
-			log.Printf("[watcher] Processed %s: W=%d E=%d BW=%d ERR=%d",
-				filepath.Base(path),
+			log.Printf("[watcher] Processed %s (%s): W=%d E=%d BW=%d ERR=%d",
+				filepath.Base(path), machine,
 				len(data.Wallet), len(data.Earnings), len(data.Bandwidth), len(data.Errors))
 		}
 		return nil
 	})
 
 	if anyNewData && !silent {
-		hub.Broadcast("data_updated", map[string]any{"message": "New data available"})
+		hub.Broadcast("data_updated", map[string]any{"message": "New data available", "machine": machine})
 	}
 }
 

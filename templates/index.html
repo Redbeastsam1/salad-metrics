@@ -15,7 +15,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
-    <link rel="stylesheet" href="/static/css/style.css?v=4">
+    <link rel="stylesheet" href="/static/css/style.css?v=8">
 </head>
 <body>
 
@@ -25,7 +25,11 @@
             <div class="brand-icon">🥗</div>
             <div class="brand-text">
                 <h1 class="brand-name">Salad Metrics</h1>
-                <span class="brand-machine" id="machine-name-label">Loading...</span>
+                <div class="node-selector-wrap">
+                    <select id="node-select" class="node-dropdown" title="Select Active Node">
+                        <option value="all">🌐 All Nodes (Fleet)</option>
+                    </select>
+                </div>
             </div>
             <div class="connection-pill" id="connection-pill">
                 <span class="conn-dot"></span>
@@ -63,10 +67,10 @@
                         <span>CSV</span>
                     </button>
                     <div class="dropdown-menu" id="export-dropdown">
-                        <a href="/api/export?type=earnings" download class="dropdown-item">📊 Earnings History (.csv)</a>
-                        <a href="/api/export?type=wallet" download class="dropdown-item">💰 Wallet Balance (.csv)</a>
-                        <a href="/api/export?type=power" download class="dropdown-item">⚡ Power Telemetry (.csv)</a>
-                        <a href="/api/export?type=bandwidth" download class="dropdown-item">🌐 Bandwidth History (.csv)</a>
+                        <a href="/api/export?type=earnings" download class="dropdown-item" id="export-earnings-link">📊 Earnings History (.csv)</a>
+                        <a href="/api/export?type=wallet" download class="dropdown-item" id="export-wallet-link">💰 Wallet Balance (.csv)</a>
+                        <a href="/api/export?type=power" download class="dropdown-item" id="export-power-link">⚡ Power Telemetry (.csv)</a>
+                        <a href="/api/export?type=bandwidth" download class="dropdown-item" id="export-bandwidth-link">🌐 Bandwidth History (.csv)</a>
                     </div>
                 </div>
                 <button class="error-badge-btn" id="error-toggle-btn" title="View Degraded Errors">
@@ -88,7 +92,7 @@
         <div class="stat-hero" id="stat-wallet">
             <div class="hero-label">Wallet Balance</div>
             <div class="hero-value accent-green" id="wallet-balance-text">$0.0000</div>
-            <div class="hero-sub">Total earned</div>
+            <div class="hero-sub" id="wallet-sub-text">Total earned</div>
         </div>
 
         <div class="stat-hero" id="stat-earnings">
@@ -110,6 +114,20 @@
                 <span id="status-text">Idle</span>
             </div>
             <div class="hero-sub" id="active-container-id">No active container</div>
+        </div>
+
+        <!-- ─── Fleet Nodes Strip (Multi-Node Fleet Overview) ─── -->
+        <div class="panel panel-fleet" id="fleet-panel">
+            <div class="panel-header">
+                <div class="fleet-header-left">
+                    <span class="panel-title">Fleet Nodes</span>
+                    <span class="fleet-badge" id="fleet-badge">1 Node</span>
+                </div>
+                <span class="panel-sub" id="fleet-view-status">Showing: All Nodes</span>
+            </div>
+            <div class="fleet-nodes-grid" id="fleet-nodes-container">
+                <!-- Dynamically populated node cards -->
+            </div>
         </div>
 
         <!-- ─── Row 2: System Info + Live Hardware ─── -->
@@ -182,12 +200,6 @@
                         <div class="hw-fill fill-purple" id="live-gpu-bar" style="width:0%"></div>
                     </div>
                 </div>
-                <div class="hw-row">
-                    <div class="hw-meta">
-                        <span class="hw-label">Network</span>
-                        <span class="hw-val accent-cyan" id="live-net-val">↓ 0.00 MB/s · ↑ 0.00 MB/s</span>
-                    </div>
-                </div>
             </div>
 
             <!-- ── Live Power Draw ── -->
@@ -237,38 +249,12 @@
             <div class="chart-wrap"><canvas id="containerChart"></canvas></div>
         </div>
 
-        <div class="panel panel-chart panel-bandwidth">
-            <div class="panel-header panel-header-bw">
-                <div class="panel-title-group">
-                    <span class="panel-title">Bandwidth Throughput</span>
-                    <span class="panel-sub" id="bandwidth-panel-sub">MB/s</span>
-                </div>
-                <div class="bw-summary-bar" id="bw-summary-bar">
-                    <div class="bw-stat-pill" title="Bandwidth used in past 24 hours">
-                        <span class="bw-stat-label">24h</span>
-                        <span class="bw-stat-val" id="bw-val-24h">0.00 MB</span>
-                    </div>
-                    <div class="bw-stat-pill" title="Bandwidth used in past 7 days">
-                        <span class="bw-stat-label">Week</span>
-                        <span class="bw-stat-val" id="bw-val-7d">0.00 MB</span>
-                    </div>
-                    <div class="bw-stat-pill" title="Bandwidth used in past 30 days">
-                        <span class="bw-stat-label">1M</span>
-                        <span class="bw-stat-val" id="bw-val-30d">0.00 MB</span>
-                    </div>
-                    <div class="bw-stat-pill" title="Bandwidth used in past 6 months">
-                        <span class="bw-stat-label">6M</span>
-                        <span class="bw-stat-val accent-cyan" id="bw-val-180d">849.03 GB</span>
-                    </div>
-                    <div class="bw-stat-pill highlight-all" title="Total all-time bandwidth used">
-                        <span class="bw-stat-label">All</span>
-                        <span class="bw-stat-val accent-purple" id="bw-val-all">849.03 GB</span>
-                    </div>
-                </div>
+        <div class="panel panel-chart">
+            <div class="panel-header">
+                <span class="panel-title">Bandwidth Throughput</span>
+                <span class="panel-sub">MB/s</span>
             </div>
-            <div class="chart-wrap">
-                <canvas id="bandwidthChart"></canvas>
-            </div>
+            <div class="chart-wrap"><canvas id="bandwidthChart"></canvas></div>
         </div>
 
         <div class="panel panel-chart">
@@ -313,6 +299,6 @@
     <!-- ═══════════════════════ TOAST CONTAINER ═══════════════════════ -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="/static/js/app.js?v=4"></script>
+    <script src="/static/js/app.js?v=8"></script>
 </body>
 </html>

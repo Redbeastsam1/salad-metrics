@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -45,6 +46,20 @@ func Parse() *Config {
 	}
 	if envMachine := os.Getenv("MACHINE_NAME"); envMachine != "" && cfg.MachineName == "Beast" {
 		cfg.MachineName = envMachine
+	}
+	if envDB := os.Getenv("SALAD_DB_FILE"); envDB != "" && cfg.DBFile == "salad_metrics.db" {
+		cfg.DBFile = envDB
+	}
+	if envPort := os.Getenv("SALAD_PORT"); envPort != "" {
+		var p int
+		if _, err := fmt.Sscanf(envPort, "%d", &p); err == nil && p > 0 {
+			cfg.Port = p
+		}
+	} else if envPort := os.Getenv("PORT"); envPort != "" {
+		var p int
+		if _, err := fmt.Sscanf(envPort, "%d", &p); err == nil && p > 0 {
+			cfg.Port = p
+		}
 	}
 	if envToken := os.Getenv("DISCORD_BOT_TOKEN"); envToken != "" && cfg.DiscordToken == "" {
 		cfg.DiscordToken = envToken

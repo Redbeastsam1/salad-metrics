@@ -11,7 +11,6 @@ import (
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
-	"github.com/shirou/gopsutil/v4/net"
 )
 
 // Stats holds a snapshot of live hardware usage and power metrics.
@@ -25,17 +24,12 @@ type Stats struct {
 	GPUPower    float64 `json:"gpu_power"`     // in Watts (direct from nvidia-smi)
 	GPULimit    float64 `json:"gpu_limit"`     // in Watts (power limit from nvidia-smi)
 	TotalPower  float64 `json:"total_power"`   // in Watts (GPU + CPU combined)
-	NetDownMBps float64 `json:"net_down_mbps"` // Live download speed in MB/s
-	NetUpMBps   float64 `json:"net_up_mbps"`   // Live upload speed in MB/s
 }
 
 var (
-	cached           atomic.Pointer[Stats]
-	cpuIdleWatts     = 18.0
-	cpuMaxWatts      = 250.0
-	prevNetBytesRecv uint64
-	prevNetBytesSent uint64
-	prevNetTime      time.Time
+	cached       atomic.Pointer[Stats]
+	cpuIdleWatts = 18.0
+	cpuMaxWatts  = 250.0
 )
 
 func init() {
@@ -94,7 +88,12 @@ func Get() Stats {
 
 // StartPoller launches a background goroutine that refreshes hardware stats every 2 seconds
 // and records power readings into SQLite every 30 seconds.
-func StartPoller(database *db.DB) {
+func StartPoller(database *db.DB, machineName ...string) {
+	mach := "Beast"
+	if len(machineName) > 0 && machineName[0] != "" {
+		mach = machineName[0]
+	}
+
 	go func() {
 		tickCount := 0
 		for {
@@ -104,8 +103,9 @@ func StartPoller(database *db.DB) {
 			// Record to DB immediately on first tick, then every 15 ticks (every 30 seconds)
 			if database != nil && (tickCount == 0 || tickCount%15 == 0) {
 				ts := time.Now().Format("2006-01-02 15:04:05")
-				database.InsertSinglePower(db.PowerRow{
+				database.InsertSinglePowerWithMachine(mach, db.PowerRow{
 					Timestamp:  ts,
+					Machine:    mach,
 					GPUPower:   s.GPUPower,
 					CPUPower:   s.CPUPower,
 					TotalPower: s.TotalPower,
@@ -144,24 +144,6 @@ func poll() Stats {
 
 	// Total combined power draw
 	s.TotalPower = math.Round((s.GPUPower+s.CPUPower)*10) / 10
-
-	// Live network throughput (Download & Upload in MB/s)
-	if ioCounters, err := net.IOCounters(false); err == nil && len(ioCounters) > 0 {
-		now := time.Now()
-		currRecv := ioCounters[0].BytesRecv
-		currSent := ioCounters[0].BytesSent
-
-		if !prevNetTime.IsZero() {
-			dt := now.Sub(prevNetTime).Seconds()
-			if dt > 0 && currRecv >= prevNetBytesRecv && currSent >= prevNetBytesSent {
-				s.NetDownMBps = math.Round(((float64(currRecv-prevNetBytesRecv)/dt)/(1024*1024))*100) / 100
-				s.NetUpMBps = math.Round(((float64(currSent-prevNetBytesSent)/dt)/(1024*1024))*100) / 100
-			}
-		}
-		prevNetBytesRecv = currRecv
-		prevNetBytesSent = currSent
-		prevNetTime = now
-	}
 
 	return s
 }

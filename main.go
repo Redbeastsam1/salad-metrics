@@ -71,8 +71,8 @@ func main() {
 	// 5. Start background routines
 	if cfg.Mode != "server" && cfg.Mode != "hub" {
 		// Standalone mode: sample local hardware & watch local logs
-		hardware.StartPoller(database)
-		go watcher.Run(cfg.LogDir, database, hub)
+		hardware.StartPoller(database, cfg.MachineName)
+		go watcher.Run(cfg.LogDir, database, hub, cfg.MachineName)
 	} else {
 		log.Println("[server] Running in Hub Server mode. Waiting for agents to report...")
 	}

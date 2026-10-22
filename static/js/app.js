@@ -8,6 +8,8 @@
 // ─── State ─────────────────────────────────────────────
 let isDarkMode    = JSON.parse(localStorage.getItem('isDarkMode') ?? 'true');
 let currentHours  = 24;
+let selectedNode  = localStorage.getItem('selectedNode') || 'all';
+let knownNodes    = [];
 let walletChart, containerChart, bandwidthChart, powerChart;
 let notifiedErrors    = new Set();
 let isFirstErrorLoad  = true;
@@ -90,6 +92,7 @@ function connectWS() {
     ws.onopen = () => {
         setConnectionStatus(true);
         console.log('[ws] Connected');
+        fetchNodes();
         fetchDashboardData();
         fetchStats();
     };
@@ -98,16 +101,20 @@ function connectWS() {
         try {
             const msg = JSON.parse(evt.data);
             if (msg.event === 'data_updated') {
+                fetchNodes();
                 fetchDashboardData();
                 fetchStats();
                 fetchErrors();
             } else if (msg.event === 'machine_status' && msg.data) {
-                isMachineOnline = msg.data.online;
-                applyMachineOnlineStatus({
-                    is_online: msg.data.online,
-                    last_seen_secs: msg.data.last_seen_secs,
-                    machine_name: msg.data.machine
-                });
+                fetchNodes();
+                if (selectedNode === 'all' || selectedNode === msg.data.machine) {
+                    isMachineOnline = msg.data.online;
+                    applyMachineOnlineStatus({
+                        is_online: msg.data.online,
+                        last_seen_secs: msg.data.last_seen_secs,
+                        machine_name: msg.data.machine
+                    });
+                }
             }
         } catch (e) {}
     };
@@ -242,23 +249,123 @@ function updateChartColors() {
     });
 }
 
+// ─── Multi-Node Fleet Management ──────────────────────
+async function fetchNodes() {
+    try {
+        const res = await fetch('/api/nodes');
+        const nodes = await res.json();
+        if (Array.isArray(nodes) && nodes.length > 0) {
+            knownNodes = nodes;
+            populateNodeDropdown(nodes);
+            renderFleetNodes(nodes);
+        }
+    } catch (e) {
+        console.error('[nodes]', e);
+    }
+}
+
+function populateNodeDropdown(nodes) {
+    const select = document.getElementById('node-select');
+    if (!select) return;
+
+    let html = `<option value="all">🌐 All Nodes (Fleet)</option>`;
+    nodes.forEach(n => {
+        const dot = n.is_online ? '🟢' : '🔴';
+        html += `<option value="${n.name}">${dot} ${n.name}</option>`;
+    });
+    select.innerHTML = html;
+
+    const exists = (selectedNode === 'all') || nodes.some(n => n.name === selectedNode);
+    if (!exists && nodes.length > 0) {
+        selectedNode = 'all';
+    }
+    select.value = selectedNode;
+    updateExportLinks();
+}
+
+function renderFleetNodes(nodes) {
+    const container = document.getElementById('fleet-nodes-container');
+    const badge = document.getElementById('fleet-badge');
+    const statusText = document.getElementById('fleet-view-status');
+    if (!container) return;
+
+    const onlineCount = nodes.filter(n => n.is_online).length;
+    if (badge) badge.textContent = `${onlineCount}/${nodes.length} Online`;
+    if (statusText) {
+        statusText.textContent = `Showing: ${selectedNode === 'all' ? 'All Nodes (Fleet)' : selectedNode}`;
+    }
+
+    container.innerHTML = nodes.map(n => {
+        const isSel = (selectedNode === n.name);
+        const rateStr = n.current_rate > 0 ? formatCurrency(n.current_rate) + '/d' : 'Idle';
+        const powerStr = (n.hardware?.total_power && n.hardware.total_power > 0) ? `~${n.hardware.total_power.toFixed(0)} W` : '--';
+        const gpuName = (n.system_info?.GPU && n.system_info.GPU !== 'Unknown') ? n.system_info.GPU : (n.hardware?.gpu_load !== undefined ? 'GPU Node' : 'Salad Node');
+        const uptimeStr = n.uptime || (n.is_online ? 'Online' : 'Offline');
+
+        return `
+            <div class="node-card ${isSel ? 'active-selected' : ''}" onclick="selectNode('${n.name}')">
+                <div class="node-card-top">
+                    <div class="node-card-name">
+                        <span>🖥️</span>
+                        <span>${n.name}</span>
+                    </div>
+                    <span class="node-card-status-pill ${n.is_online ? 'online' : 'offline'}">
+                        ${n.is_online ? '● Online' : '○ Offline'}
+                    </span>
+                </div>
+                <div class="node-card-specs">
+                    <div class="node-card-specs-row">🎮 <strong>${gpuName}</strong></div>
+                    <div class="node-card-specs-row">⏱️ ${uptimeStr}</div>
+                </div>
+                <div class="node-card-metrics">
+                    <div class="node-metric-box">
+                        <span class="node-metric-lbl">Rate</span>
+                        <span class="node-metric-val accent-green">${rateStr}</span>
+                    </div>
+                    <div class="node-metric-box" style="text-align: right;">
+                        <span class="node-metric-lbl">Power</span>
+                        <span class="node-metric-val accent-purple">${powerStr}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectNode(name) {
+    selectedNode = name;
+    localStorage.setItem('selectedNode', selectedNode);
+    const select = document.getElementById('node-select');
+    if (select) select.value = selectedNode;
+
+    updateExportLinks();
+    renderFleetNodes(knownNodes);
+    fetchDashboardData();
+    fetchStats();
+    fetchSystemInfo();
+    updateLiveHardware();
+    fetchErrors();
+}
+
+function updateExportLinks() {
+    ['earnings', 'wallet', 'power', 'bandwidth'].forEach(type => {
+        const link = document.getElementById(`export-${type}-link`);
+        if (link) {
+            link.href = `/api/export?type=${type}&machine=${encodeURIComponent(selectedNode)}`;
+        }
+    });
+}
+
 // ─── Data Fetching ─────────────────────────────────────
 async function fetchDashboardData() {
     try {
-        const res  = await fetch(`/api/data?hours=${currentHours}`);
+        const res  = await fetch(`/api/data?hours=${currentHours}&machine=${encodeURIComponent(selectedNode)}`);
         const data = await res.json();
-        const now  = new Date();
-
-        // Apply time window to all charts
+        // Keep chart x-axes free (auto-scaling to collected data range)
         [walletChart, containerChart, bandwidthChart, powerChart].forEach(chart => {
             if (!chart) return;
-            if (currentHours === 0) {
-                delete chart.options.scales.x.min;
-                delete chart.options.scales.x.max;
-            } else {
-                chart.options.scales.x.min = new Date(now - currentHours * 3600000);
-                chart.options.scales.x.max = now;
-            }
+            delete chart.options.scales.x.min;
+            delete chart.options.scales.x.max;
         });
 
         const curr = CURRENCIES[activeCurrency] || CURRENCIES.USD;
@@ -281,7 +388,7 @@ async function fetchDashboardData() {
         }
 
         // ── Bandwidth ──
-        if (data.bandwidth && data.bandwidth.length > 0) {
+        if (data.bandwidth?.length > 0) {
             const bCtx = bandwidthChart.canvas.getContext('2d');
             bandwidthChart.data.datasets = [{
                 label: 'Throughput (MB/s)',
@@ -290,9 +397,6 @@ async function fetchDashboardData() {
                 backgroundColor: makeGradient(bCtx, 'rgba(34,211,238,1)'),
                 fill: true
             }];
-            bandwidthChart.update();
-        } else {
-            bandwidthChart.data.datasets = [];
             bandwidthChart.update();
         }
 
@@ -328,12 +432,12 @@ async function fetchDashboardData() {
         // ── Earnings / Containers ──
         const containersMap = {};
         (data.earnings ?? []).forEach(d => {
-            const id = d.container_id;
+            const labelKey = (selectedNode === 'all' && d.machine) ? `${d.machine} - ${d.container_id}` : d.container_id;
             const ts = new Date(d.timestamp);
-            if (!containersMap[id]) containersMap[id] = { data: [], start: ts, rate: 0 };
-            containersMap[id].data.push({ x: ts, y: d.rate * curr.rate });
-            containersMap[id].rate = d.rate;
-            if (ts < containersMap[id].start) containersMap[id].start = ts;
+            if (!containersMap[labelKey]) containersMap[labelKey] = { data: [], start: ts, rate: 0 };
+            containersMap[labelKey].data.push({ x: ts, y: d.rate * curr.rate });
+            containersMap[labelKey].rate = d.rate;
+            if (ts < containersMap[labelKey].start) containersMap[labelKey].start = ts;
         });
 
         const cCtx = containerChart.canvas.getContext('2d');
@@ -355,7 +459,7 @@ async function fetchDashboardData() {
 
 async function fetchStats() {
     try {
-        const res   = await fetch('/api/stats');
+        const res   = await fetch(`/api/stats?machine=${encodeURIComponent(selectedNode)}`);
         const stats = await res.json();
         document.getElementById('session-uptime').textContent = `Uptime: ${stats.uptime}`;
         lastSessionEarningsUSD = parseFloat(stats.session_earnings) || 0;
@@ -365,7 +469,10 @@ async function fetchStats() {
             animateValue('wallet-balance-text', formatCurrency(lastWalletUSD));
         }
         if (stats.machine_name) {
-            document.getElementById('machine-name-label').textContent = stats.machine_name;
+            const select = document.getElementById('node-select');
+            if (select && select.value !== selectedNode) {
+                select.value = selectedNode;
+            }
         }
         if (stats.is_online !== undefined) {
             isMachineOnline = stats.is_online;
@@ -376,37 +483,23 @@ async function fetchStats() {
                 updateStatusCard(lastEarningsData);
             }
         }
-        if (stats.bandwidth_summary) {
-            const b = stats.bandwidth_summary;
-            const el24h  = document.getElementById('bw-val-24h');
-            const el7d   = document.getElementById('bw-val-7d');
-            const el30d  = document.getElementById('bw-val-30d');
-            const el180d = document.getElementById('bw-val-180d');
-            const elAll  = document.getElementById('bw-val-all');
-
-            if (el24h)  el24h.textContent  = b.usage_24h || '0.00 MB';
-            if (el7d)   el7d.textContent   = b.usage_7d || '0.00 MB';
-            if (el30d)  el30d.textContent  = b.usage_30d || '0.00 MB';
-            if (el180d) el180d.textContent = b.usage_180d || '0.00 MB';
-            if (elAll)  elAll.textContent  = b.usage_all || '0.00 MB';
-        }
     } catch (e) {}
 }
 
 async function fetchSystemInfo() {
     try {
-        const res  = await fetch('/api/system-info');
+        const res  = await fetch(`/api/system-info?machine=${encodeURIComponent(selectedNode)}`);
         const info = await res.json();
-        document.getElementById('sys-cpu').textContent = info.CPU;
-        document.getElementById('sys-gpu').textContent = info.GPU;
-        document.getElementById('sys-ram').textContent = info.RAM;
-        document.getElementById('sys-os').textContent  = info.OS;
+        document.getElementById('sys-cpu').textContent = info.CPU || '--';
+        document.getElementById('sys-gpu').textContent = info.GPU || '--';
+        document.getElementById('sys-ram').textContent = info.RAM || '--';
+        document.getElementById('sys-os').textContent  = info.OS || '--';
     } catch (e) {}
 }
 
 async function updateLiveHardware() {
     try {
-        const res  = await fetch('/api/hardware-live');
+        const res  = await fetch(`/api/hardware-live?machine=${encodeURIComponent(selectedNode)}`);
         const data = await res.json();
 
         const cpuPowerStr = data.cpu_power ? ` · ~${data.cpu_power.toFixed(0)}W` : '';
@@ -424,8 +517,8 @@ async function updateLiveHardware() {
         if (gpuPowerEl) gpuPowerEl.textContent = `${(data.gpu_power ?? 0).toFixed(1)} W`;
 
         const gpuLimitEl = document.getElementById('live-gpu-limit');
-        if (gpuLimitEl && data.gpu_limit > 0) {
-            gpuLimitEl.textContent = `/ ${data.gpu_limit.toFixed(0)}W`;
+        if (gpuLimitEl) {
+            gpuLimitEl.textContent = data.gpu_limit > 0 ? `/ ${data.gpu_limit.toFixed(0)}W` : '';
         }
 
         const cpuPowerEl = document.getElementById('live-cpu-power');
@@ -433,12 +526,6 @@ async function updateLiveHardware() {
 
         lastTotalPowerWatts = data.total_power ?? 0;
         updateEfficiency(lastCurrentRateUSD, lastTotalPowerWatts);
-
-        // Live Network Throughput
-        const netEl = document.getElementById('live-net-val');
-        if (netEl && data.net_down_mbps !== undefined) {
-            netEl.textContent = `↓ ${data.net_down_mbps.toFixed(2)} MB/s · ↑ ${data.net_up_mbps.toFixed(2)} MB/s`;
-        }
 
     } catch (e) {}
 }
@@ -576,7 +663,7 @@ function renderContainerHistory(containersMap) {
 // ─── Errors ────────────────────────────────────────────
 async function fetchErrors() {
     try {
-        const res    = await fetch('/api/errors');
+        const res    = await fetch(`/api/errors?machine=${encodeURIComponent(selectedNode)}`);
         const errors = await res.json();
         const list   = document.getElementById('errors-container');
         const badge  = document.getElementById('error-count');
@@ -613,11 +700,13 @@ async function fetchErrors() {
                 title = 'Node Degraded';
             }
 
+            const machPrefix = (selectedNode === 'all' && err.machine) ? `[${err.machine}] ` : '';
+
             const card = document.createElement('div');
             card.className = 'error-card';
             card.innerHTML = `
                 <div class="error-card-header">
-                    <span class="error-card-title">${title}</span>
+                    <span class="error-card-title">${machPrefix}${title}</span>
                     <span class="error-age">${ago}</span>
                 </div>
                 <p class="error-msg">${err.message}</p>
@@ -723,6 +812,15 @@ document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     connectWS();
 
+    // Node selector initialization
+    const nodeSelect = document.getElementById('node-select');
+    if (nodeSelect) {
+        nodeSelect.value = selectedNode;
+        nodeSelect.addEventListener('change', (e) => {
+            selectNode(e.target.value);
+        });
+    }
+
     // Currency selector initialization
     const currencySelect = document.getElementById('currency-select');
     if (currencySelect) {
@@ -748,6 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial data load
+    fetchNodes();
     fetchDashboardData();
     fetchSystemInfo();
     fetchStats();
@@ -755,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchExchangeRates();
 
     // Periodic refresh fallback (even if WS is healthy)
+    setInterval(fetchNodes, 10_000);
     setInterval(fetchStats, 10_000);
     setInterval(fetchDashboardData, 10_000);
     setInterval(updateLiveHardware, 2000);

@@ -38,4 +38,4 @@ RUN mkdir -p /app/data
 EXPOSE 8000
 
 ENTRYPOINT ["/app/salad-metrics"]
-CMD ["-port", "8000", "-tray=false", "-db", "/app/data/salad_metrics.db"]
+CMD ["-mode", "server", "-port", "8000", "-tray=false", "-db", "/app/data/salad_metrics.db"]
