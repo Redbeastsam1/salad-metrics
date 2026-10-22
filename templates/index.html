@@ -15,7 +15,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
-    <link rel="stylesheet" href="/static/css/style.css?v=8">
+    <link rel="stylesheet" href="/static/css/style.css?v=9">
 </head>
 <body>
 
@@ -25,11 +25,7 @@
             <div class="brand-icon">🥗</div>
             <div class="brand-text">
                 <h1 class="brand-name">Salad Metrics</h1>
-                <div class="node-selector-wrap">
-                    <select id="node-select" class="node-dropdown" title="Select Active Node">
-                        <option value="all">🌐 All Nodes (Fleet)</option>
-                    </select>
-                </div>
+                <span class="brand-machine" id="machine-name-label">Loading...</span>
             </div>
             <div class="connection-pill" id="connection-pill">
                 <span class="conn-dot"></span>
@@ -67,10 +63,10 @@
                         <span>CSV</span>
                     </button>
                     <div class="dropdown-menu" id="export-dropdown">
-                        <a href="/api/export?type=earnings" download class="dropdown-item" id="export-earnings-link">📊 Earnings History (.csv)</a>
-                        <a href="/api/export?type=wallet" download class="dropdown-item" id="export-wallet-link">💰 Wallet Balance (.csv)</a>
-                        <a href="/api/export?type=power" download class="dropdown-item" id="export-power-link">⚡ Power Telemetry (.csv)</a>
-                        <a href="/api/export?type=bandwidth" download class="dropdown-item" id="export-bandwidth-link">🌐 Bandwidth History (.csv)</a>
+                        <a href="/api/export?type=earnings" download class="dropdown-item">📊 Earnings History (.csv)</a>
+                        <a href="/api/export?type=wallet" download class="dropdown-item">💰 Wallet Balance (.csv)</a>
+                        <a href="/api/export?type=power" download class="dropdown-item">⚡ Power Telemetry (.csv)</a>
+                        <a href="/api/export?type=bandwidth" download class="dropdown-item">🌐 Bandwidth History (.csv)</a>
                     </div>
                 </div>
                 <button class="error-badge-btn" id="error-toggle-btn" title="View Degraded Errors">
@@ -92,7 +88,7 @@
         <div class="stat-hero" id="stat-wallet">
             <div class="hero-label">Wallet Balance</div>
             <div class="hero-value accent-green" id="wallet-balance-text">$0.0000</div>
-            <div class="hero-sub" id="wallet-sub-text">Total earned</div>
+            <div class="hero-sub">Total earned</div>
         </div>
 
         <div class="stat-hero" id="stat-earnings">
@@ -116,19 +112,7 @@
             <div class="hero-sub" id="active-container-id">No active container</div>
         </div>
 
-        <!-- ─── Fleet Nodes Strip (Multi-Node Fleet Overview) ─── -->
-        <div class="panel panel-fleet" id="fleet-panel">
-            <div class="panel-header">
-                <div class="fleet-header-left">
-                    <span class="panel-title">Fleet Nodes</span>
-                    <span class="fleet-badge" id="fleet-badge">1 Node</span>
-                </div>
-                <span class="panel-sub" id="fleet-view-status">Showing: All Nodes</span>
-            </div>
-            <div class="fleet-nodes-grid" id="fleet-nodes-container">
-                <!-- Dynamically populated node cards -->
-            </div>
-        </div>
+
 
         <!-- ─── Row 2: System Info + Live Hardware ─── -->
         <div class="panel panel-sysinfo">
@@ -299,6 +283,6 @@
     <!-- ═══════════════════════ TOAST CONTAINER ═══════════════════════ -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="/static/js/app.js?v=8"></script>
+    <script src="/static/js/app.js?v=9"></script>
 </body>
 </html>
