@@ -1,5 +1,6 @@
 # Binaries
 *.exe
+*.exe~
 salad-metrics.exe
 salad-metrics-linux
 salad-metrics

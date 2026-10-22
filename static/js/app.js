@@ -17,7 +17,6 @@ let lastWalletUSD          = 0;
 let lastSessionEarningsUSD = 0;
 let lastCurrentRateUSD     = 0;
 let lastTotalPowerWatts    = 0;
-let isMachineOnline        = true;
 let lastMachineStats       = null;
 let lastEarningsData       = null;
 
@@ -101,13 +100,6 @@ function connectWS() {
                 fetchDashboardData();
                 fetchStats();
                 fetchErrors();
-            } else if (msg.event === 'machine_status' && msg.data) {
-                isMachineOnline = msg.data.online;
-                applyMachineOnlineStatus({
-                    is_online: msg.data.online,
-                    last_seen_secs: msg.data.last_seen_secs,
-                    machine_name: msg.data.machine
-                });
             }
         } catch (e) {}
     };
@@ -357,15 +349,8 @@ async function fetchStats() {
         if (stats.machine_name) {
             document.getElementById('machine-name-label').textContent = stats.machine_name;
         }
-        if (stats.is_online !== undefined) {
-            isMachineOnline = stats.is_online;
-            lastMachineStats = stats;
-            if (!isMachineOnline) {
-                applyMachineOnlineStatus(stats);
-            } else {
-                updateStatusCard(lastEarningsData);
-            }
-        }
+        lastMachineStats = stats;
+        updateStatusCard(lastEarningsData);
     } catch (e) {}
 }
 
@@ -419,44 +404,11 @@ function setBar(valId, barId, pct, label) {
 }
 
 // ─── Status Card ───────────────────────────────────────
-function applyMachineOnlineStatus(status) {
-    const badge = document.getElementById('node-status');
-    const statusText = document.getElementById('status-text');
-    const containerLabel = document.getElementById('active-container-id');
-
-    if (!badge || !statusText) return;
-
-    if (status.is_online === false) {
-        badge.className = 'status-badge offline';
-        statusText.textContent = 'Offline / Crashed';
-        const secs = status.last_seen_secs ?? 0;
-        let timeStr = 'just now';
-        if (secs >= 60) {
-            const mins = Math.floor(secs / 60);
-            timeStr = `${mins}m ago`;
-        } else if (secs > 0) {
-            timeStr = `${secs}s ago`;
-        }
-        if (containerLabel) {
-            containerLabel.textContent = `Last seen ${timeStr}`;
-        }
-        animateValue('current-rate', '--');
-        updateEfficiency(0, lastTotalPowerWatts);
-    }
-}
-
 function updateStatusCard(earnings) {
     if (earnings) {
         lastEarningsData = earnings;
     } else {
         earnings = lastEarningsData;
-    }
-
-    if (!isMachineOnline) {
-        if (lastMachineStats) {
-            applyMachineOnlineStatus(lastMachineStats);
-        }
-        return;
     }
 
     const badge = document.getElementById('node-status');
@@ -465,8 +417,8 @@ function updateStatusCard(earnings) {
     const rateEl = document.getElementById('current-rate');
 
     // 1. Authoritative status from backend /api/stats
-    if (lastMachineStats && lastMachineStats.node_status) {
-        if (lastMachineStats.node_status === 'running') {
+    if (lastMachineStats && lastMachineStats.status) {
+        if (lastMachineStats.status === 'running') {
             badge.className = 'status-badge running';
             statusText.textContent = 'Running';
             const id = lastMachineStats.active_container_id || '';
@@ -499,9 +451,10 @@ function updateStatusCard(earnings) {
 
     const latest = earnings[earnings.length - 1];
     const rate   = parseFloat(latest.rate ?? 0);
-    const isIdle = rate <= 0 || (lastMachineStats && lastMachineStats.uptime === 'Idle');
+    const ts     = new Date(latest.timestamp);
+    const isStale = (Date.now() - ts.getTime()) > 30 * 60 * 1000;
 
-    if (!isIdle && rate > 0) {
+    if (rate > 0 && !isStale) {
         badge.className = 'status-badge running';
         statusText.textContent = 'Running';
         const id = latest.container_id ?? '';

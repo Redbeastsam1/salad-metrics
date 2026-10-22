@@ -115,97 +115,18 @@ func apiData(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	machine := r.URL.Query().Get("machine")
+	if machine == "" || machine == "all" {
+		machine = cfg.MachineName
+	}
 	writeJSON(w, database.GetData(hours, machine))
 }
 
 func apiStats(w http.ResponseWriter, r *http.Request) {
 	machine := r.URL.Query().Get("machine")
-	allNodes := hubPkg.GetAllMachines(database)
-	if len(allNodes) == 0 {
-		workload := database.GetActiveWorkload(cfg.MachineName)
-		uptime, sessEarn := database.GetSessionStats(cfg.MachineName)
-		hw := hardware.Get()
-		sys := parser.GetCachedSystemInfo()
-		allNodes = []hubPkg.MachineState{
-			{
-				Name:         cfg.MachineName,
-				IsOnline:     true,
-				LastSeenSecs: 0,
-				Status:       workload.Status,
-				Rate:         workload.Rate,
-				ContainerID:  workload.ContainerID,
-				Uptime:       uptime,
-				SessionEarn:  sessEarn,
-				Hardware:     &hw,
-				SystemInfo:   sys,
-			},
-		}
+	if machine == "" || machine == "all" {
+		machine = cfg.MachineName
 	}
 
-	if machine == "all" || machine == "" {
-		// Fleet aggregated stats
-		var totalRate float64
-		var totalSessionEarnings float64
-		activeCount := 0
-		onlineCount := 0
-
-		for _, n := range allNodes {
-			if n.IsOnline {
-				onlineCount++
-			}
-			if n.Status == "running" {
-				activeCount++
-				totalRate += n.Rate
-			}
-			totalSessionEarnings += n.SessionEarn
-		}
-
-		latestWallet := database.GetLatestWallet("")
-		var walletBal float64
-		if latestWallet != nil {
-			walletBal = latestWallet.Current
-		}
-
-		nodeStatus := "idle"
-		if onlineCount == 0 && len(allNodes) > 0 {
-			nodeStatus = "offline"
-		} else if activeCount > 0 {
-			nodeStatus = "running"
-		}
-
-		uptimeStr := "Fleet"
-		if len(allNodes) == 1 {
-			uptimeStr = allNodes[0].Uptime
-		} else {
-			uptimeStr = fmt.Sprintf("%d/%d Online", onlineCount, len(allNodes))
-		}
-
-		activeContainer := "Fleet Overview"
-		if activeCount > 0 {
-			activeContainer = fmt.Sprintf("%d Workloads Active", activeCount)
-		} else {
-			activeContainer = "No active containers"
-		}
-
-		writeJSON(w, map[string]any{
-			"uptime":              uptimeStr,
-			"session_earnings":    totalSessionEarnings,
-			"wallet_balance":      walletBal,
-			"machine_name":        "All Nodes (Fleet)",
-			"is_online":           onlineCount > 0 || len(allNodes) == 0,
-			"last_seen_secs":      0,
-			"mode":                cfg.Mode,
-			"node_status":         nodeStatus,
-			"current_rate":        totalRate,
-			"active_container_id": activeContainer,
-			"nodes":               allNodes,
-			"active_nodes_count":  activeCount,
-			"total_nodes_count":   len(allNodes),
-		})
-		return
-	}
-
-	// Specific single machine stats
 	workload := database.GetActiveWorkload(machine)
 	uptimeStr, sessionEarnings := database.GetSessionStats(machine)
 	latestWallet := database.GetLatestWallet(machine)
@@ -214,25 +135,14 @@ func apiStats(w http.ResponseWriter, r *http.Request) {
 		walletBal = latestWallet.Current
 	}
 
-	machineState := hubPkg.GetMachineStatus(machine)
-
-	nodeStatus := workload.Status
-	if !machineState.IsOnline {
-		nodeStatus = "offline"
-	}
-
 	writeJSON(w, map[string]any{
 		"uptime":              uptimeStr,
 		"session_earnings":    sessionEarnings,
 		"wallet_balance":      walletBal,
 		"machine_name":        machine,
-		"is_online":           machineState.IsOnline,
-		"last_seen_secs":      machineState.LastSeenSecs,
-		"mode":                cfg.Mode,
-		"node_status":         nodeStatus,
+		"status":              workload.Status,
 		"current_rate":        workload.Rate,
 		"active_container_id": workload.ContainerID,
-		"nodes":               allNodes,
 	})
 }
 
